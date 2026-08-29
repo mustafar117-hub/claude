@@ -287,6 +287,8 @@ let data = { company:'My Company', tasks:[], profiles:[], customers:[], vendors:
 let view = 'dashboard';
 let openForm = null;
 let taskFilter = 'open';
+let ledgerPartyFilter = '';
+let ledgerMonthFilter = '';
 let expandedLogs = new Set();
 window._noteFor = null;
 window._apptCustomerId = null;
@@ -850,7 +852,13 @@ function renderVendors(){
 
 function renderLedger(){
   const balance = data.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
-  const sorted = [...data.ledger].sort((a,b)=> b.date.localeCompare(a.date));
+
+  let filtered = [...data.ledger];
+  if(ledgerPartyFilter){ filtered = filtered.filter(e => (e.partyType && (e.partyType+':'+e.partyId))===ledgerPartyFilter); }
+  if(ledgerMonthFilter){ filtered = filtered.filter(e => e.date && e.date.slice(0,7)===ledgerMonthFilter); }
+  const sorted = filtered.sort((a,b)=> b.date.localeCompare(a.date));
+  const filtersActive = !!(ledgerPartyFilter || ledgerMonthFilter);
+
   const rows = sorted.length ? sorted.map(e=>{
     const party = e.partyType ? partyName(e.partyType, e.partyId) : null;
     return `
@@ -864,10 +872,27 @@ function renderLedger(){
       <button class="icon-btn del-ledger" data-id="${e.id}" title="Delete">✕</button>
     </div>
   `;
-  }).join('') : `<div class="empty">No ledger entries yet — record your first transaction below.</div>`;
+  }).join('') : `<div class="empty">${filtersActive ? 'No entries match this filter.' : 'No ledger entries yet — record your first transaction below.'}</div>`;
 
-  const custOptions = data.customers.map(c=>`<option value="customer:${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  const vendorOptions = data.vendors.map(v=>`<option value="vendor:${v.id}">${escapeHtml(v.name)}</option>`).join('');
+  const custOptions = data.customers.map(c=>`<option value="customer:${c.id}" ${ledgerPartyFilter==='customer:'+c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
+  const vendorOptions = data.vendors.map(v=>`<option value="vendor:${v.id}" ${ledgerPartyFilter==='vendor:'+v.id?'selected':''}>${escapeHtml(v.name)}</option>`).join('');
+
+  const custFormOptions = data.customers.map(c=>`<option value="customer:${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const vendorFormOptions = data.vendors.map(v=>`<option value="vendor:${v.id}">${escapeHtml(v.name)}</option>`).join('');
+
+  let filterSummary = '';
+  if(filtersActive){
+    const fCredit = sorted.filter(e=>e.type==='credit').reduce((s,e)=>s+Number(e.amount),0);
+    const fDebit = sorted.filter(e=>e.type==='debit').reduce((s,e)=>s+Number(e.amount),0);
+    const fNet = fCredit - fDebit;
+    filterSummary = `
+    <div class="stat-row" style="margin-bottom:18px;">
+      <div class="stat"><div class="label">Entries</div><div class="value">${sorted.length}</div></div>
+      <div class="stat credit"><div class="label">Credit</div><div class="value">${fmtMoney(fCredit)}</div></div>
+      <div class="stat debit"><div class="label">Debit</div><div class="value">${fmtMoney(fDebit)}</div></div>
+      <div class="stat ${fNet>=0?'credit':'debit'}"><div class="label">Net</div><div class="value">${fmtMoney(fNet)}</div></div>
+    </div>`;
+  }
 
   return `
     <div class="page-head">
@@ -889,8 +914,8 @@ function renderLedger(){
         <div class="field"><label>Customer or vendor (optional)</label>
           <select id="f-led-party">
             <option value="">—</option>
-            ${custOptions ? `<optgroup label="Customers">${custOptions}</optgroup>` : ''}
-            ${vendorOptions ? `<optgroup label="Vendors">${vendorOptions}</optgroup>` : ''}
+            ${custFormOptions ? `<optgroup label="Customers">${custFormOptions}</optgroup>` : ''}
+            ${vendorFormOptions ? `<optgroup label="Vendors">${vendorFormOptions}</optgroup>` : ''}
           </select>
         </div>
       </div>
@@ -899,6 +924,24 @@ function renderLedger(){
         <button class="btn ghost" id="cancelLedger">Cancel</button>
       </div>
     </div>
+
+    <div class="form-grid" style="grid-template-columns:1fr 1fr auto; align-items:end; margin-bottom:18px;">
+      <div class="field">
+        <label>Customer or vendor</label>
+        <select id="f-ledger-filter-party">
+          <option value="">All</option>
+          ${custOptions ? `<optgroup label="Customers">${custOptions}</optgroup>` : ''}
+          ${vendorOptions ? `<optgroup label="Vendors">${vendorOptions}</optgroup>` : ''}
+        </select>
+      </div>
+      <div class="field">
+        <label>Month</label>
+        <input type="month" id="f-ledger-filter-month" value="${ledgerMonthFilter}">
+      </div>
+      <button class="btn ghost small" id="clearLedgerFilters" style="height:39px;">Clear</button>
+    </div>
+
+    ${filterSummary}
 
     <div class="sheet">${rows}</div>
   `;
@@ -1170,6 +1213,12 @@ function attachHandlers(){
         await loadAll(); render();
       };
     });
+    const filterParty = document.getElementById('f-ledger-filter-party');
+    if(filterParty) filterParty.onchange = ()=>{ ledgerPartyFilter = filterParty.value; render(); };
+    const filterMonth = document.getElementById('f-ledger-filter-month');
+    if(filterMonth) filterMonth.onchange = ()=>{ ledgerMonthFilter = filterMonth.value; render(); };
+    const clearFilters = document.getElementById('clearLedgerFilters');
+    if(clearFilters) clearFilters.onclick = ()=>{ ledgerPartyFilter=''; ledgerMonthFilter=''; render(); };
   }
 }
 
