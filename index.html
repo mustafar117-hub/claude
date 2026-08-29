@@ -185,6 +185,10 @@
   .badge.done{ background:var(--emerald-bg); color:var(--emerald); }
   .badge.credit{ background:var(--emerald-bg); color:var(--emerald); }
   .badge.debit{ background:var(--rust-bg); color:var(--rust); }
+  .badge.priority-high{ background:var(--rust-bg); color:var(--rust); }
+  .badge.priority-normal{ background:var(--amber-bg); color:var(--amber); }
+  .badge.priority-low{ background:var(--emerald-bg); color:var(--emerald); }
+  .row.urgent{ border-left:3px solid var(--rust); }
   .icon-btn{ background:none; border:none; cursor:pointer; color:var(--slate); font-size:16px; padding:4px 8px; }
   .icon-btn:hover{ color:var(--rust); }
 
@@ -317,6 +321,11 @@ function statusClass(s){
   if(s==='done') return 'done';
   if(s==='in progress') return 'progress';
   return 'todo';
+}
+function priorityBadge(p){
+  const map = { high: {cls:'priority-high', label:'Urgent'}, normal: {cls:'priority-normal', label:'Medium'}, low: {cls:'priority-low', label:'Low'} };
+  const m = map[p] || map.normal;
+  return `<span class="badge ${m.cls}">${m.label}</span>`;
 }
 
 // ---------- LOAD / SAVE ----------
@@ -478,14 +487,15 @@ function renderMyTasks(){
     return true;
   });
   const rows = visible.length ? visible.map(t=>`
-    <div class="row">
+    <div class="row${t.status!=='done' && t.priority==='high'?' urgent':''}">
       <button class="task-check ${t.status==='done'?'checked':''}" data-id="${t.id}" title="${t.status==='done'?'Mark as not done':'Mark complete'}">${t.status==='done'?'✓':''}</button>
       <div class="row-main">
         <div class="row-title ${t.status==='done'?'done':''}">${escapeHtml(t.title)}</div>
         <div class="row-meta">${t.status==='done'
           ? 'Completed '+(t.completedAt? fmtDate(t.completedAt.slice(0,10)):'')
-          : (t.due? 'Due '+fmtDate(t.due):'No due date')+' · '+escapeHtml(t.priority||'normal')+' priority'}</div>
+          : (t.due? 'Due '+fmtDate(t.due):'No due date')}</div>
       </div>
+      ${t.status!=='done' ? priorityBadge(t.priority||'normal') : ''}
     </div>
   `).join('') : `<div class="empty">${taskFilter==='done' ? 'Nothing completed yet.' : 'Nothing assigned to you right now.'}</div>`;
 
@@ -505,11 +515,12 @@ function renderMyTasks(){
 // ---------- OWNER VIEWS ----------
 function renderDashboard(){
   const openTaskRows = shared.tasks.filter(t=>t.status!=='done').slice(0,5).map(t=>`
-    <div class="row">
+    <div class="row${t.priority==='high'?' urgent':''}">
       <div class="row-main">
         <div class="row-title">${escapeHtml(t.title)}</div>
         <div class="row-meta">${escapeHtml(t.assignee||'Unassigned')}${t.due? ' · due '+fmtDate(t.due):''}</div>
       </div>
+      ${priorityBadge(t.priority||'normal')}
       <span class="badge ${statusClass(t.status)}">${escapeHtml(t.status)}</span>
     </div>`).join('') || `<div class="empty">Nothing open — you're all caught up.</div>`;
 
@@ -577,14 +588,15 @@ function renderTasks(){
   });
 
   const rows = visible.length ? visible.map(t=>`
-    <div class="row">
+    <div class="row${t.status!=='done' && t.priority==='high'?' urgent':''}">
       <button class="task-check ${t.status==='done'?'checked':''}" data-id="${t.id}" title="${t.status==='done'?'Mark as not done':'Mark complete'}">${t.status==='done'?'✓':''}</button>
       <div class="row-main">
         <div class="row-title ${t.status==='done'?'done':''}">${escapeHtml(t.title)}</div>
         <div class="row-meta">${t.status==='done'
           ? 'Completed by '+escapeHtml(t.assignee||'Unassigned')+(t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):'')
-          : 'Assigned to '+escapeHtml(t.assignee||'Unassigned')+(t.due? ' · due '+fmtDate(t.due):'')+' · '+escapeHtml(t.priority||'normal')+' priority'}</div>
+          : 'Assigned to '+escapeHtml(t.assignee||'Unassigned')+(t.due? ' · due '+fmtDate(t.due):'')}</div>
       </div>
+      ${t.status!=='done' ? priorityBadge(t.priority||'normal') : ''}
       ${t.status!=='done' ? `
       <select class="status-select" data-id="${t.id}" style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; padding:5px 6px; border:1px solid var(--line-strong); border-radius:2px;">
         <option value="todo" ${t.status==='todo'?'selected':''}>To do</option>
@@ -614,9 +626,9 @@ function renderTasks(){
         <div class="field"><label>Due date</label><input type="date" id="f-task-due"></div>
         <div class="field"><label>Priority</label>
           <select id="f-task-priority">
-            <option value="low">Low</option>
-            <option value="normal" selected>Normal</option>
-            <option value="high">High</option>
+            <option value="low">Low — not urgent</option>
+            <option value="normal" selected>Medium — a little urgent</option>
+            <option value="high">High — urgent</option>
           </select>
         </div>
       </div>
