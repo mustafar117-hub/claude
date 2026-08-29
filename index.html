@@ -210,6 +210,21 @@
 
   .form-panel{ background:var(--panel); border:1px solid var(--line-strong); padding:20px; margin-bottom:24px; display:none; }
   .form-panel.open{ display:block; }
+  .convo-log{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
+  .convo-log-label{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase;
+    letter-spacing:0.8px; color:var(--slate); margin-bottom:5px;
+  }
+  .convo-entry{ font-size:13px; line-height:1.5; margin-bottom:4px; position:relative; padding-right:22px; }
+  .convo-entry.empty-note{ color:var(--slate); font-style:italic; }
+  .convo-entry .icon-btn{ position:absolute; right:-4px; top:-3px; font-size:12px; padding:2px 4px; }
+  .convo-date{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate); margin-right:8px; }
+  .convo-toggle{
+    background:none; border:none; color:var(--emerald); cursor:pointer; padding:2px 0;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; text-decoration:underline;
+  }
+  .row-actions{ display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+
   .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
   .field{ display:flex; flex-direction:column; gap:5px; }
   .field.full{ grid-column:1 / -1; }
@@ -247,12 +262,14 @@ const PRIVATE_KEY = 'ops-private-v1'; // customers, appointments, ledger, this d
 const LEGACY_KEY = 'ops-data-v1';     // old single-bucket format, migrated on first load
 
 let shared = { tasks: [], staff: [] };
-let priv = { company: 'My Company', customers: [], appointments: [], ledger: [], myRole: null, myName: null };
+let priv = { company: 'My Company', customers: [], vendors: [], appointments: [], ledger: [], myRole: null, myName: null };
 
 let view = 'dashboard';
 let openForm = null;
 let taskFilter = 'open';
 let staffPickerOpen = false;
+let expandedLogs = new Set();
+window._noteFor = null;
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -271,6 +288,30 @@ function escapeHtml(str){
 function customerName(id){
   const c = priv.customers.find(x=>x.id===id);
   return c ? c.name : '—';
+}
+function vendorName(id){
+  const v = priv.vendors.find(x=>x.id===id);
+  return v ? v.name : '—';
+}
+function partyName(type, id){
+  if(type==='vendor') return vendorName(id);
+  if(type==='customer') return customerName(id);
+  return null;
+}
+function allNotesSorted(){
+  const all = [];
+  priv.customers.forEach(c=> (c.notes||[]).forEach(n=> all.push({...n, partyType:'customer', partyId:c.id, partyName:c.name})));
+  priv.vendors.forEach(v=> (v.notes||[]).forEach(n=> all.push({...n, partyType:'vendor', partyId:v.id, partyName:v.name})));
+  return all.sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id));
+}
+function renderConvoEntries(notes, expanded, kind, id){
+  if(!notes.length) return `<div class="convo-entry empty-note">No updates logged yet.</div>`;
+  const entry = n => `<div class="convo-entry"><span class="convo-date">${fmtDate(n.date)}</span>${escapeHtml(n.text)}<button class="icon-btn del-note" data-kind="${kind}" data-id="${id}" data-note-id="${n.id}" title="Delete">✕</button></div>`;
+  if(!expanded){
+    const extra = notes.length>1 ? `<button class="convo-toggle" data-kind="${kind}" data-id="${id}">+ ${notes.length-1} earlier</button>` : '';
+    return entry(notes[0]) + extra;
+  }
+  return notes.map(entry).join('') + `<button class="convo-toggle" data-kind="${kind}" data-id="${id}">Show less</button>`;
 }
 function statusClass(s){
   if(s==='done') return 'done';
@@ -309,6 +350,16 @@ async function load(){
     }catch(e){ /* no legacy data */ }
   }
 
+  // Backfill fields introduced after earlier saves (vendors, conversation notes, ledger party links)
+  priv.vendors = priv.vendors || [];
+  priv.customers = (priv.customers||[]).map(c=> ({...c, notes: c.notes||[]}));
+  priv.vendors = priv.vendors.map(v=> ({...v, notes: v.notes||[]}));
+  priv.ledger = (priv.ledger||[]).map(e=>{
+    if(e.partyType!==undefined) return e;
+    if(e.customerId) return {...e, partyType:'customer', partyId:e.customerId};
+    return {...e, partyType:null, partyId:null};
+  });
+
   render();
 }
 async function saveShared(){
@@ -341,7 +392,7 @@ function renderGate(){
 
       <button class="gate-option" id="pickOwner">
         <div class="t">I'm the owner / manager</div>
-        <div class="d">Full access — tasks, customers, appointments, ledger</div>
+        <div class="d">Full access — tasks, customers, vendors, appointments, ledger</div>
       </button>
 
       <button class="gate-option" id="pickStaff">
@@ -389,7 +440,8 @@ function renderApp(){
     <div class="nav-item ${view==='tasks'?'active':''}" data-view="tasks"><span class="nav-num">02</span>Tasks</div>
     <div class="nav-item ${view==='team'?'active':''}" data-view="team"><span class="nav-num">03</span>Team</div>
     <div class="nav-item ${view==='customers'?'active':''}" data-view="customers"><span class="nav-num">04</span>Customers</div>
-    <div class="nav-item ${view==='ledger'?'active':''}" data-view="ledger"><span class="nav-num">05</span>Ledger</div>
+    <div class="nav-item ${view==='vendors'?'active':''}" data-view="vendors"><span class="nav-num">05</span>Vendors</div>
+    <div class="nav-item ${view==='ledger'?'active':''}" data-view="ledger"><span class="nav-num">06</span>Ledger</div>
   ` : `
     <div class="nav-item active" data-view="tasks"><span class="nav-num">01</span>My Tasks</div>
   `;
@@ -400,6 +452,7 @@ function renderApp(){
   else if(view==='tasks') body = renderTasks();
   else if(view==='team') body = renderTeam();
   else if(view==='customers') body = renderCustomers();
+  else if(view==='vendors') body = renderVendors();
   else if(view==='ledger') body = renderLedger();
 
   return `
@@ -479,6 +532,14 @@ function renderDashboard(){
       </div>
     </div>`).join('') || `<div class="empty">No upcoming appointments scheduled.</div>`;
 
+  const recentNotes = allNotesSorted().slice(0,5).map(n=>`
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(n.partyName)} <span class="badge ${n.partyType==='vendor'?'debit':'credit'}" style="margin-left:6px;">${n.partyType}</span></div>
+        <div class="row-meta" style="margin-top:4px;">${fmtDate(n.date)} — ${escapeHtml(n.text)}</div>
+      </div>
+    </div>`).join('') || `<div class="empty">No conversation notes logged yet.</div>`;
+
   return `
     <div class="page-head">
       <div>
@@ -490,6 +551,7 @@ function renderDashboard(){
       <div class="stat"><div class="label">Open Tasks</div><div class="value">${shared.tasks.filter(t=>t.status!=='done').length}</div></div>
       <div class="stat"><div class="label">Upcoming Appointments</div><div class="value">${upcoming.length}</div></div>
       <div class="stat"><div class="label">Customers</div><div class="value">${priv.customers.length}</div></div>
+      <div class="stat"><div class="label">Vendors</div><div class="value">${priv.vendors.length}</div></div>
       <div class="stat ${balance>=0?'credit':'debit'}"><div class="label">Ledger Balance</div><div class="value">${fmtMoney(balance)}</div></div>
     </div>
 
@@ -501,6 +563,9 @@ function renderDashboard(){
 
     <div class="section-title">Recently completed</div>
     <div class="sheet">${completedRecent}</div>
+
+    <div class="section-title">Recent conversations</div>
+    <div class="sheet">${recentNotes}</div>
   `;
 }
 
@@ -608,18 +673,44 @@ function renderTeam(){
   `;
 }
 
+function renderNoteFormPanel(){
+  const target = window._noteFor;
+  const label = target ? (target.kind==='customer' ? customerName(target.id) : vendorName(target.id)) : '';
+  return `
+    <div class="form-panel ${openForm==='note'?'open':''}" id="noteForm">
+      <div class="sub" style="margin-bottom:10px;">New conversation note for <strong id="noteForParty">${escapeHtml(label)}</strong></div>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" id="f-note-date" value="${todayISO()}"></div>
+        <div class="field full"><label>What happened</label><textarea id="f-note-text" placeholder="e.g. Called about invoice, agreed to pay by Friday"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveNote">Save note</button>
+        <button class="btn ghost" id="cancelNote">Cancel</button>
+      </div>
+    </div>`;
+}
+
 function renderCustomers(){
   const rows = priv.customers.length ? priv.customers.map(c=>{
     const appts = priv.appointments.filter(a=>a.customerId===c.id).sort((a,b)=>a.date.localeCompare(b.date));
     const nextAppt = appts.find(a=>a.date>=todayISO());
+    const notes = (c.notes||[]).slice().sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    const key = 'customer:'+c.id;
     return `
     <div class="row" style="align-items:flex-start;">
       <div class="row-main">
         <div class="row-title">${escapeHtml(c.name)}</div>
         <div class="row-meta">${escapeHtml(c.phone||'')}${c.phone&&c.email?' · ':''}${escapeHtml(c.email||'')}</div>
         <div class="row-meta" style="margin-top:6px;">${nextAppt ? 'Next appointment: '+fmtDate(nextAppt.date)+(nextAppt.time?' · '+escapeHtml(nextAppt.time):'')+' — '+escapeHtml(nextAppt.service||'') : 'No upcoming appointment'}</div>
+        <div class="convo-log">
+          <div class="convo-log-label">Last conversation</div>
+          ${renderConvoEntries(notes, expandedLogs.has(key), 'customer', c.id)}
+        </div>
       </div>
-      <button class="btn small ghost add-appt" data-id="${c.id}">+ Appointment</button>
+      <div class="row-actions">
+        <button class="btn small ghost add-appt" data-id="${c.id}">+ Appointment</button>
+        <button class="btn small ghost add-note" data-kind="customer" data-id="${c.id}">+ Note</button>
+      </div>
       <button class="icon-btn del-customer" data-id="${c.id}" title="Delete">✕</button>
     </div>`;
   }).join('') : `<div class="empty">No customers yet — add your first below.</div>`;
@@ -656,6 +747,53 @@ function renderCustomers(){
       </div>
     </div>
 
+    ${renderNoteFormPanel()}
+
+    <div class="sheet">${rows}</div>
+  `;
+}
+
+function renderVendors(){
+  const rows = priv.vendors.length ? priv.vendors.map(v=>{
+    const notes = (v.notes||[]).slice().sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    const key = 'vendor:'+v.id;
+    return `
+    <div class="row" style="align-items:flex-start;">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(v.name)}</div>
+        <div class="row-meta">${escapeHtml(v.phone||'')}${v.phone&&v.email?' · ':''}${escapeHtml(v.email||'')}</div>
+        <div class="convo-log">
+          <div class="convo-log-label">Last conversation</div>
+          ${renderConvoEntries(notes, expandedLogs.has(key), 'vendor', v.id)}
+        </div>
+      </div>
+      <div class="row-actions">
+        <button class="btn small ghost add-note" data-kind="vendor" data-id="${v.id}">+ Note</button>
+      </div>
+      <button class="icon-btn del-vendor" data-id="${v.id}" title="Delete">✕</button>
+    </div>`;
+  }).join('') : `<div class="empty">No vendors yet — add your first below.</div>`;
+
+  return `
+    <div class="page-head">
+      <div><h1>Vendors</h1><div class="sub">Private — only visible to you</div></div>
+      <button class="btn" id="toggleVendorForm">+ New Vendor</button>
+    </div>
+
+    <div class="form-panel ${openForm==='vendor'?'open':''}" id="vendorForm">
+      <div class="form-grid">
+        <div class="field"><label>Name</label><input id="f-vendor-name" placeholder="Vendor / supplier name"></div>
+        <div class="field"><label>Phone</label><input id="f-vendor-phone" placeholder="Phone number"></div>
+        <div class="field full"><label>Email</label><input id="f-vendor-email" placeholder="Email address"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveVendor">Save vendor</button>
+        <button class="btn ghost" id="cancelVendor">Cancel</button>
+      </div>
+    </div>
+
+    ${renderNoteFormPanel()}
+
     <div class="sheet">${rows}</div>
   `;
 }
@@ -663,19 +801,23 @@ function renderCustomers(){
 function renderLedger(){
   const balance = priv.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
   const sorted = [...priv.ledger].sort((a,b)=> b.date.localeCompare(a.date));
-  const rows = sorted.length ? sorted.map(e=>`
+  const rows = sorted.length ? sorted.map(e=>{
+    const party = e.partyType ? partyName(e.partyType, e.partyId) : null;
+    return `
     <div class="row">
       <div class="row-main">
         <div class="row-title">${escapeHtml(e.description)}</div>
-        <div class="row-meta">${fmtDate(e.date)}${e.customerId? ' · '+escapeHtml(customerName(e.customerId)):''}</div>
+        <div class="row-meta">${fmtDate(e.date)}${party? ' · '+(e.partyType==='vendor'?'Vendor: ':'Customer: ')+escapeHtml(party):''}</div>
       </div>
       <span class="badge ${e.type}">${e.type}</span>
       <span class="amount ${e.type}">${e.type==='debit'?'-':'+'}${fmtMoney(e.amount)}</span>
       <button class="icon-btn del-ledger" data-id="${e.id}" title="Delete">✕</button>
     </div>
-  `).join('') : `<div class="empty">No ledger entries yet — record your first transaction below.</div>`;
+  `;
+  }).join('') : `<div class="empty">No ledger entries yet — record your first transaction below.</div>`;
 
-  const custOptions = priv.customers.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const custOptions = priv.customers.map(c=>`<option value="customer:${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const vendorOptions = priv.vendors.map(v=>`<option value="vendor:${v.id}">${escapeHtml(v.name)}</option>`).join('');
 
   return `
     <div class="page-head">
@@ -694,8 +836,12 @@ function renderLedger(){
           </select>
         </div>
         <div class="field"><label>Amount</label><input type="number" step="0.01" min="0" id="f-led-amount" placeholder="0.00"></div>
-        <div class="field"><label>Customer (optional)</label>
-          <select id="f-led-customer"><option value="">—</option>${custOptions}</select>
+        <div class="field"><label>Customer or vendor (optional)</label>
+          <select id="f-led-party">
+            <option value="">—</option>
+            ${custOptions ? `<optgroup label="Customers">${custOptions}</optgroup>` : ''}
+            ${vendorOptions ? `<optgroup label="Vendors">${vendorOptions}</optgroup>` : ''}
+          </select>
         </div>
       </div>
       <div class="form-actions">
@@ -709,6 +855,48 @@ function renderLedger(){
 }
 
 // ---------- HANDLERS ----------
+function attachNoteHandlers(){
+  document.querySelectorAll('.add-note').forEach(btn=>{
+    btn.onclick = ()=>{
+      openForm='note';
+      window._noteFor = { kind: btn.dataset.kind, id: btn.dataset.id };
+      render();
+      const panel = document.getElementById('noteForm');
+      if(panel) panel.scrollIntoView({behavior:'smooth', block:'center'});
+    };
+  });
+  document.querySelectorAll('.convo-toggle').forEach(btn=>{
+    btn.onclick = ()=>{
+      const key = btn.dataset.kind+':'+btn.dataset.id;
+      if(expandedLogs.has(key)) expandedLogs.delete(key); else expandedLogs.add(key);
+      render();
+    };
+  });
+  document.querySelectorAll('.del-note').forEach(btn=>{
+    btn.onclick = ()=>{
+      const list = btn.dataset.kind==='customer' ? priv.customers : priv.vendors;
+      const party = list.find(p=>p.id===btn.dataset.id);
+      if(party){
+        party.notes = (party.notes||[]).filter(n=>n.id!==btn.dataset.noteId);
+        savePrivate(); render();
+      }
+    };
+  });
+  const cancelNote = document.getElementById('cancelNote');
+  if(cancelNote) cancelNote.onclick = ()=>{ openForm=null; window._noteFor=null; render(); };
+  const saveNote = document.getElementById('saveNote');
+  if(saveNote) saveNote.onclick = ()=>{
+    const text = document.getElementById('f-note-text').value.trim();
+    if(!text || !window._noteFor){ return; }
+    const list = window._noteFor.kind==='customer' ? priv.customers : priv.vendors;
+    const party = list.find(p=>p.id===window._noteFor.id);
+    if(!party){ return; }
+    party.notes = party.notes || [];
+    party.notes.push({ id: uid(), date: document.getElementById('f-note-date').value || todayISO(), text });
+    openForm=null; window._noteFor=null; savePrivate(); render();
+  };
+}
+
 function attachHandlers(){
   const switchRole = document.getElementById('switchRole');
   if(switchRole) switchRole.onclick = ()=>{
@@ -830,6 +1018,7 @@ function attachHandlers(){
         const id = btn.dataset.id;
         priv.customers = priv.customers.filter(c=>c.id!==id);
         priv.appointments = priv.appointments.filter(a=>a.customerId!==id);
+        priv.ledger = priv.ledger.filter(e=> !(e.partyType==='customer' && e.partyId===id));
         savePrivate(); render();
       };
     });
@@ -863,6 +1052,35 @@ function attachHandlers(){
       const label = document.getElementById('apptForCustomer');
       if(label) label.textContent = customerName(window._apptCustomerId);
     }
+    attachNoteHandlers();
+  }
+
+  if(view==='vendors'){
+    const toggle = document.getElementById('toggleVendorForm');
+    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='vendor'?null:'vendor'; render(); };
+    const cancel = document.getElementById('cancelVendor');
+    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
+    const saveBtn = document.getElementById('saveVendor');
+    if(saveBtn) saveBtn.onclick = ()=>{
+      const name = document.getElementById('f-vendor-name').value.trim();
+      if(!name){ return; }
+      priv.vendors.push({
+        id: uid(), name,
+        phone: document.getElementById('f-vendor-phone').value.trim(),
+        email: document.getElementById('f-vendor-email').value.trim(),
+        notes: []
+      });
+      openForm=null; savePrivate(); render();
+    };
+    document.querySelectorAll('.del-vendor').forEach(btn=>{
+      btn.onclick = ()=>{
+        const id = btn.dataset.id;
+        priv.vendors = priv.vendors.filter(v=>v.id!==id);
+        priv.ledger = priv.ledger.filter(e=> !(e.partyType==='vendor' && e.partyId===id));
+        savePrivate(); render();
+      };
+    });
+    attachNoteHandlers();
   }
 
   if(view==='ledger'){
@@ -875,13 +1093,17 @@ function attachHandlers(){
       const desc = document.getElementById('f-led-desc').value.trim();
       const amount = parseFloat(document.getElementById('f-led-amount').value);
       if(!desc || isNaN(amount) || amount<0){ return; }
+      const partyVal = document.getElementById('f-led-party').value;
+      let partyType=null, partyId=null;
+      if(partyVal){ [partyType, partyId] = partyVal.split(':'); }
       priv.ledger.push({
         id: uid(),
         description: desc,
         date: document.getElementById('f-led-date').value || todayISO(),
         type: document.getElementById('f-led-type').value,
         amount,
-        customerId: document.getElementById('f-led-customer').value || null
+        partyType,
+        partyId
       });
       openForm=null; savePrivate(); render();
     };
