@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <title>Ops Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --ink:#14213D;
@@ -33,7 +35,7 @@
   }
   .app{ display:flex; min-height:100vh; }
 
-  /* ---- Role gate screen ---- */
+  /* ---- Auth screen ---- */
   .gate{
     min-height:100vh;
     display:flex; align-items:center; justify-content:center;
@@ -58,37 +60,18 @@
     color:var(--slate);
     text-transform:uppercase;
     letter-spacing:1px;
-    margin:0 0 28px;
+    margin:0 0 24px;
   }
-  .gate-option{
-    display:block;
-    width:100%;
-    text-align:left;
-    background:#fff;
-    border:1.5px solid var(--line-strong);
-    padding:16px 18px;
-    margin-bottom:12px;
-    cursor:pointer;
-    border-radius:var(--radius);
-    font-family:'Inter',sans-serif;
+  .gate-error{
+    background:var(--rust-bg); color:var(--rust); font-size:13px;
+    padding:10px 12px; border-radius:var(--radius); margin-bottom:16px; line-height:1.5;
   }
-  .gate-option:hover{ border-color:var(--ink); }
-  .gate-option .t{ font-weight:700; font-size:15px; }
-  .gate-option .d{ font-size:12.5px; color:var(--slate); margin-top:3px; }
-  .staff-pick{ display:none; margin-top:18px; }
-  .staff-pick.open{ display:block; }
-  .staff-name-btn{
-    display:block; width:100%; text-align:left;
-    background:#fff; border:1px solid var(--line-strong);
-    padding:12px 14px; margin-bottom:8px; cursor:pointer;
-    font-family:'Inter',sans-serif; font-size:14px; border-radius:var(--radius);
-  }
-  .staff-name-btn:hover{ border-color:var(--emerald); }
   .gate-note{
     font-family:'IBM Plex Mono',monospace;
     font-size:11px; color:var(--slate);
     margin-top:18px; line-height:1.6;
   }
+  .gate-link{ cursor:pointer; text-decoration:underline; color:var(--emerald); }
 
   /* ---- Sidebar ---- */
   .rail{
@@ -147,9 +130,11 @@
     transition:background 0.15s;
   }
   .btn:hover{ background:var(--ink-soft); }
+  .btn:disabled{ opacity:0.6; cursor:default; }
   .btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line-strong); }
   .btn.ghost:hover{ border-color:var(--ink); }
   .btn.small{ padding:6px 12px; font-size:12.5px; }
+  .btn.full{ width:100%; }
 
   .stat-row{ display:flex; gap:16px; margin-bottom:32px; flex-wrap:wrap; }
   .stat{
@@ -230,6 +215,7 @@
   .row-actions{ display:flex; flex-direction:column; gap:6px; align-items:stretch; }
 
   .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .form-grid.single{ grid-template-columns:1fr; }
   .field{ display:flex; flex-direction:column; gap:5px; }
   .field.full{ grid-column:1 / -1; }
   .field label{
@@ -242,6 +228,17 @@
   }
   .field textarea{ resize:vertical; min-height:60px; }
   .form-actions{ display:flex; gap:10px; }
+
+  .setup-block{
+    background:var(--panel); border:1px solid var(--line-strong); padding:28px;
+    max-width:560px; margin:60px auto; text-align:left;
+  }
+  .setup-block h1{ font-family:'Fraunces',serif; font-size:22px; margin:0 0 12px; }
+  .setup-block p{ font-size:14px; line-height:1.6; color:var(--ink-soft); }
+  .setup-block code{
+    display:block; background:var(--paper); border:1px solid var(--line); padding:10px 12px;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; margin:10px 0; overflow-x:auto;
+  }
 
   @media (max-width: 760px){
     .app{ flex-direction:column; }
@@ -261,19 +258,28 @@
 <div id="root"></div>
 
 <script>
-const SHARED_KEY = 'ops-shared-v1';   // tasks + staff roster — visible to everyone who opens this
-const PRIVATE_KEY = 'ops-private-v1'; // customers, appointments, ledger, this device's role — visible only to this Claude account
-const LEGACY_KEY = 'ops-data-v1';     // old single-bucket format, migrated on first load
+// Fill these in from your Supabase project: Settings → API.
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
-let shared = { tasks: [], staff: [] };
-let priv = { company: 'My Company', customers: [], vendors: [], appointments: [], ledger: [], myRole: null, myName: null };
+const sb = (SUPABASE_URL.startsWith('http') && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+let session = null;
+let profile = null; // { id, name, role }
+let authMode = 'login'; // 'login' | 'signup'
+let authError = null;
+let authBusy = false;
+
+let data = { company:'My Company', tasks:[], profiles:[], customers:[], vendors:[], appointments:[], ledger:[] };
 
 let view = 'dashboard';
 let openForm = null;
 let taskFilter = 'open';
-let staffPickerOpen = false;
 let expandedLogs = new Set();
 window._noteFor = null;
+window._apptCustomerId = null;
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const todayISO = () => new Date().toISOString().slice(0,10);
@@ -289,12 +295,16 @@ const fmtMoney = (n) => {
 function escapeHtml(str){
   return String(str??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
+function profileName(id){
+  const p = data.profiles.find(x=>x.id===id);
+  return p ? p.name : null;
+}
 function customerName(id){
-  const c = priv.customers.find(x=>x.id===id);
+  const c = data.customers.find(x=>x.id===id);
   return c ? c.name : '—';
 }
 function vendorName(id){
-  const v = priv.vendors.find(x=>x.id===id);
+  const v = data.vendors.find(x=>x.id===id);
   return v ? v.name : '—';
 }
 function partyName(type, id){
@@ -304,8 +314,8 @@ function partyName(type, id){
 }
 function allNotesSorted(){
   const all = [];
-  priv.customers.forEach(c=> (c.notes||[]).forEach(n=> all.push({...n, partyType:'customer', partyId:c.id, partyName:c.name})));
-  priv.vendors.forEach(v=> (v.notes||[]).forEach(n=> all.push({...n, partyType:'vendor', partyId:v.id, partyName:v.name})));
+  data.customers.forEach(c=> (c.notes||[]).forEach(n=> all.push({...n, partyName:c.name})));
+  data.vendors.forEach(v=> (v.notes||[]).forEach(n=> all.push({...n, partyName:v.name})));
   return all.sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id));
 }
 function renderConvoEntries(notes, expanded, kind, id){
@@ -328,122 +338,146 @@ function priorityBadge(p){
   return `<span class="badge ${m.cls}">${m.label}</span>`;
 }
 
-// ---------- LOAD / SAVE ----------
-async function load(){
-  try{
-    const sRes = await window.storage.get(SHARED_KEY, true);
-    if(sRes && sRes.value) shared = JSON.parse(sRes.value);
-  }catch(e){ /* nothing shared yet */ }
+// ---------- DB row <-> app-shape mapping ----------
+function fromDbTask(r){ return { id:r.id, title:r.title, assigneeId:r.assignee_id, due:r.due, priority:r.priority, status:r.status, completedAt:r.completed_at }; }
+function fromDbCustomer(r){ return { id:r.id, name:r.name, phone:r.phone, email:r.email, notes:[] }; }
+function fromDbVendor(r){ return { id:r.id, name:r.name, phone:r.phone, email:r.email, notes:[] }; }
+function fromDbAppt(r){ return { id:r.id, customerId:r.customer_id, date:r.date, time:r.time, service:r.service, notes:r.notes }; }
+function fromDbLedger(r){ return { id:r.id, description:r.description, date:r.date, type:r.type, amount:Number(r.amount), partyType:r.party_type, partyId:r.party_id }; }
+function fromDbNote(r){ return { id:r.id, partyType:r.party_type, partyId:r.party_id, date:r.date, text:r.text }; }
 
-  try{
-    const pRes = await window.storage.get(PRIVATE_KEY, false);
-    if(pRes && pRes.value) priv = JSON.parse(pRes.value);
-  }catch(e){ /* nothing private yet */ }
+async function loadAll(){
+  const [{data:tasks}, {data:profiles}, {data:settings}] = await Promise.all([
+    sb.from('tasks').select('*').order('created_at'),
+    sb.from('profiles').select('*').order('name'),
+    sb.from('settings').select('*').maybeSingle()
+  ]);
+  data.tasks = (tasks||[]).map(fromDbTask);
+  data.profiles = profiles || [];
+  data.company = (settings && settings.company) || 'My Company';
 
-  // One-time migration from the old single-bucket private format
-  if((!shared.tasks || !shared.tasks.length) && (!priv.customers || !priv.customers.length)){
-    try{
-      const legacy = await window.storage.get(LEGACY_KEY, false);
-      if(legacy && legacy.value){
-        const old = JSON.parse(legacy.value);
-        shared.tasks = old.tasks || [];
-        shared.staff = old.staff || [];
-        priv.company = old.company || priv.company;
-        priv.customers = old.customers || [];
-        priv.appointments = old.appointments || [];
-        priv.ledger = old.ledger || [];
-        priv.myRole = 'owner';
-        await saveShared();
-        await savePrivate();
-      }
-    }catch(e){ /* no legacy data */ }
+  if(profile.role==='owner'){
+    const [{data:customers},{data:vendors},{data:appts},{data:ledger},{data:notes}] = await Promise.all([
+      sb.from('customers').select('*').order('name'),
+      sb.from('vendors').select('*').order('name'),
+      sb.from('appointments').select('*').order('date'),
+      sb.from('ledger').select('*').order('date',{ascending:false}),
+      sb.from('party_notes').select('*').order('date',{ascending:false})
+    ]);
+    data.customers = (customers||[]).map(fromDbCustomer);
+    data.vendors = (vendors||[]).map(fromDbVendor);
+    data.appointments = (appts||[]).map(fromDbAppt);
+    data.ledger = (ledger||[]).map(fromDbLedger);
+    const notesList = (notes||[]).map(fromDbNote);
+    data.customers.forEach(c=> c.notes = notesList.filter(n=>n.partyType==='customer' && n.partyId===c.id));
+    data.vendors.forEach(v=> v.notes = notesList.filter(n=>n.partyType==='vendor' && n.partyId===v.id));
+  } else {
+    data.customers = []; data.vendors = []; data.appointments = []; data.ledger = [];
   }
+}
 
-  // Backfill fields introduced after earlier saves (vendors, conversation notes, ledger party links)
-  priv.vendors = priv.vendors || [];
-  priv.customers = (priv.customers||[]).map(c=> ({...c, notes: c.notes||[]}));
-  priv.vendors = priv.vendors.map(v=> ({...v, notes: v.notes||[]}));
-  priv.ledger = (priv.ledger||[]).map(e=>{
-    if(e.partyType!==undefined) return e;
-    if(e.customerId) return {...e, partyType:'customer', partyId:e.customerId};
-    return {...e, partyType:null, partyId:null};
-  });
-
+async function afterLogin(){
+  const { data: p } = await sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+  profile = p || null;
+  if(profile) await loadAll();
   render();
 }
-async function saveShared(){
-  try{ await window.storage.set(SHARED_KEY, JSON.stringify(shared), true); }
-  catch(e){ console.error('shared storage error', e); }
-}
-async function savePrivate(){
-  try{ await window.storage.set(PRIVATE_KEY, JSON.stringify(priv), false); }
-  catch(e){ console.error('private storage error', e); }
+
+async function boot(){
+  if(!sb){ render(); return; }
+  const { data: { session: s } } = await sb.auth.getSession();
+  session = s;
+  if(session){ await afterLogin(); }
+  else { render(); }
 }
 
 // ---------- ROOT RENDER ----------
 function render(){
   const root = document.getElementById('root');
-  if(!priv.myRole){
-    root.innerHTML = renderGate();
-    attachGateHandlers();
-    return;
-  }
+  if(!sb){ root.innerHTML = renderSetupNotice(); return; }
+  if(!session){ root.innerHTML = renderLogin(); attachLoginHandlers(); return; }
+  if(!profile){ root.innerHTML = renderNoProfile(); attachNoProfileHandlers(); return; }
   root.innerHTML = renderApp();
   attachHandlers();
 }
 
-function renderGate(){
+function renderSetupNotice(){
+  return `
+  <div class="setup-block">
+    <h1>Ops Ledger — one-time setup needed</h1>
+    <p>This page isn't connected to a database yet. Create a free Supabase project, run <code>supabase/schema.sql</code> from the repo in its SQL editor, then paste your Project URL and anon key into the <code>SUPABASE_URL</code> / <code>SUPABASE_ANON_KEY</code> constants near the top of this file.</p>
+    <code>Settings → API → Project URL, anon public key</code>
+  </div>`;
+}
+
+function renderLogin(){
   return `
   <div class="gate">
     <div class="gate-card">
       <h1>Ops Ledger</h1>
-      <p class="sub">Who's opening this?</p>
-
-      <button class="gate-option" id="pickOwner">
-        <div class="t">I'm the owner / manager</div>
-        <div class="d">Full access — tasks, customers, vendors, appointments, ledger</div>
-      </button>
-
-      <button class="gate-option" id="pickStaff">
-        <div class="t">I'm staff</div>
-        <div class="d">See and update only the tasks assigned to you</div>
-      </button>
-
-      <div class="staff-pick ${staffPickerOpen?'open':''}" id="staffPick">
-        ${shared.staff.length ? shared.staff.map(s=>`
-          <button class="staff-name-btn" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>
-        `).join('') : `<div class="gate-note">No staff have been added yet. Ask the owner to add you on the Team tab first.</div>`}
+      <p class="sub">${authMode==='signup' ? 'Create your login' : 'Sign in'}</p>
+      ${authError ? `<div class="gate-error">${escapeHtml(authError)}</div>` : ''}
+      <div class="form-grid single">
+        ${authMode==='signup' ? `<div class="field"><label>Your name</label><input id="auth-name" placeholder="Full name" autocomplete="name"></div>` : ''}
+        <div class="field"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label>Password</label><input id="auth-password" type="password" placeholder="••••••••" autocomplete="${authMode==='signup'?'new-password':'current-password'}"></div>
       </div>
-
-      <div class="gate-note">Tasks are shared with everyone who opens this. Customer records and the ledger stay private to whoever is signed in as owner.</div>
+      <button class="btn full" id="authSubmit" ${authBusy?'disabled':''}>${authBusy ? 'Please wait…' : (authMode==='signup' ? 'Create account' : 'Sign in')}</button>
+      <div class="gate-note">
+        ${authMode==='signup' ? 'Already have a login? ' : "New here? "}
+        <span class="gate-link" id="authToggle">${authMode==='signup' ? 'Sign in' : 'Create one'}</span>
+      </div>
     </div>
   </div>`;
 }
 
-function attachGateHandlers(){
-  const ownerBtn = document.getElementById('pickOwner');
-  if(ownerBtn) ownerBtn.onclick = ()=>{
-    priv.myRole = 'owner';
-    savePrivate();
-    render();
+function renderNoProfile(){
+  return `
+  <div class="gate">
+    <div class="gate-card">
+      <h1>Almost there</h1>
+      <p class="sub">Setting up your account</p>
+      <p style="font-size:13.5px; line-height:1.6; color:var(--ink-soft);">Your login worked, but no access has been set up for it yet. If you just signed up, this should resolve automatically — try refreshing in a moment. Otherwise, ask the owner to check your account.</p>
+      <button class="btn ghost full" id="noProfileSignOut" style="margin-top:12px;">Sign out</button>
+    </div>
+  </div>`;
+}
+
+function attachNoProfileHandlers(){
+  const btn = document.getElementById('noProfileSignOut');
+  if(btn) btn.onclick = async ()=>{ await sb.auth.signOut(); session=null; profile=null; render(); };
+}
+
+function attachLoginHandlers(){
+  const toggle = document.getElementById('authToggle');
+  if(toggle) toggle.onclick = ()=>{ authMode = authMode==='signup'?'login':'signup'; authError=null; render(); };
+  const submit = document.getElementById('authSubmit');
+  if(submit) submit.onclick = async ()=>{
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const name = document.getElementById('auth-name') ? document.getElementById('auth-name').value.trim() : '';
+    if(!email || !password){ authError='Enter an email and password.'; render(); return; }
+    if(authMode==='signup' && !name){ authError='Enter your name.'; render(); return; }
+    authBusy = true; authError = null; render();
+    if(authMode==='signup'){
+      const { data: res, error } = await sb.auth.signUp({ email, password, options:{ data:{ full_name:name } } });
+      authBusy = false;
+      if(error){ authError=error.message; render(); return; }
+      if(!res.session){ authMode='login'; authError='Account created — check your email to confirm, then sign in.'; render(); return; }
+      session = res.session;
+      await afterLogin();
+      return;
+    }
+    const { data: res, error } = await sb.auth.signInWithPassword({ email, password });
+    authBusy = false;
+    if(error){ authError=error.message; render(); return; }
+    session = res.session;
+    await afterLogin();
   };
-  const staffBtn = document.getElementById('pickStaff');
-  if(staffBtn) staffBtn.onclick = ()=>{
-    staffPickerOpen = true;
-    render();
-  };
-  document.querySelectorAll('.staff-name-btn').forEach(btn=>{
-    btn.onclick = ()=>{
-      priv.myRole = 'staff';
-      priv.myName = btn.dataset.name;
-      savePrivate();
-      render();
-    };
-  });
 }
 
 function renderApp(){
-  const isOwner = priv.myRole === 'owner';
+  const isOwner = profile.role === 'owner';
   const navItems = isOwner ? `
     <div class="nav-item ${view==='dashboard'?'active':''}" data-view="dashboard"><span class="nav-num">01</span>Dashboard</div>
     <div class="nav-item ${view==='tasks'?'active':''}" data-view="tasks"><span class="nav-num">02</span>Tasks</div>
@@ -467,11 +501,11 @@ function renderApp(){
   return `
   <div class="app">
     <div class="rail">
-      <div class="brand">${escapeHtml(priv.company)}<small>${isOwner?'Business Console':'Staff View'}</small></div>
+      <div class="brand">${escapeHtml(data.company)}<small>${isOwner?'Business Console':'Staff View'}</small></div>
       ${navItems}
       <div class="rail-foot">
-        ${isOwner ? 'saved privately to you' : 'signed in as '+escapeHtml(priv.myName)}<br>
-        <a id="switchRole">switch view</a>
+        signed in as ${escapeHtml(profile.name)}<br>
+        <a id="signOut">sign out</a>
       </div>
     </div>
     <div class="main">${body}</div>
@@ -480,7 +514,7 @@ function renderApp(){
 
 // ---------- STAFF VIEW ----------
 function renderMyTasks(){
-  const mine = shared.tasks.filter(t=>t.assignee===priv.myName);
+  const mine = data.tasks.filter(t=>t.assigneeId===profile.id);
   const visible = mine.filter(t=>{
     if(taskFilter==='open') return t.status!=='done';
     if(taskFilter==='done') return t.status==='done';
@@ -501,7 +535,7 @@ function renderMyTasks(){
 
   return `
     <div class="page-head">
-      <div><h1>My Tasks</h1><div class="sub">Assigned to ${escapeHtml(priv.myName)}</div></div>
+      <div><h1>My Tasks</h1><div class="sub">Assigned to ${escapeHtml(profile.name)}</div></div>
     </div>
     <div class="filter-tabs">
       <button class="filter-tab ${taskFilter==='open'?'active':''}" data-filter="open">Open</button>
@@ -514,27 +548,27 @@ function renderMyTasks(){
 
 // ---------- OWNER VIEWS ----------
 function renderDashboard(){
-  const openTaskRows = shared.tasks.filter(t=>t.status!=='done').slice(0,5).map(t=>`
+  const openTaskRows = data.tasks.filter(t=>t.status!=='done').slice(0,5).map(t=>`
     <div class="row${t.priority==='high'?' urgent':''}">
       <div class="row-main">
         <div class="row-title">${escapeHtml(t.title)}</div>
-        <div class="row-meta">${escapeHtml(t.assignee||'Unassigned')}${t.due? ' · due '+fmtDate(t.due):''}</div>
+        <div class="row-meta">${escapeHtml(profileName(t.assigneeId)||'Unassigned')}${t.due? ' · due '+fmtDate(t.due):''}</div>
       </div>
       ${priorityBadge(t.priority||'normal')}
       <span class="badge ${statusClass(t.status)}">${escapeHtml(t.status)}</span>
     </div>`).join('') || `<div class="empty">Nothing open — you're all caught up.</div>`;
 
-  const completedRecent = shared.tasks.filter(t=>t.status==='done').sort((a,b)=> (b.completedAt||'').localeCompare(a.completedAt||'')).slice(0,5).map(t=>`
+  const completedRecent = data.tasks.filter(t=>t.status==='done').sort((a,b)=> (b.completedAt||'').localeCompare(a.completedAt||'')).slice(0,5).map(t=>`
     <div class="row">
       <div class="task-check checked" style="cursor:default;">✓</div>
       <div class="row-main">
         <div class="row-title done">${escapeHtml(t.title)}</div>
-        <div class="row-meta">Completed by ${escapeHtml(t.assignee||'Unassigned')}${t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):''}</div>
+        <div class="row-meta">Completed by ${escapeHtml(profileName(t.assigneeId)||'Unassigned')}${t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):''}</div>
       </div>
     </div>`).join('') || `<div class="empty">No completed tasks yet.</div>`;
 
-  const upcoming = priv.appointments.filter(a=> a.date >= todayISO()).sort((a,b)=>a.date.localeCompare(b.date));
-  const balance = priv.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
+  const upcoming = data.appointments.filter(a=> a.date >= todayISO()).sort((a,b)=>a.date.localeCompare(b.date));
+  const balance = data.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
   const upcomingRows = upcoming.slice(0,5).map(a=>`
     <div class="row">
       <div class="row-main">
@@ -554,15 +588,15 @@ function renderDashboard(){
   return `
     <div class="page-head">
       <div>
-        <h1 contenteditable="true" id="companyNameEdit" spellcheck="false">${escapeHtml(priv.company)}</h1>
+        <h1 contenteditable="true" id="companyNameEdit" spellcheck="false">${escapeHtml(data.company)}</h1>
         <div class="sub">Overview</div>
       </div>
     </div>
     <div class="stat-row">
-      <div class="stat"><div class="label">Open Tasks</div><div class="value">${shared.tasks.filter(t=>t.status!=='done').length}</div></div>
+      <div class="stat"><div class="label">Open Tasks</div><div class="value">${data.tasks.filter(t=>t.status!=='done').length}</div></div>
       <div class="stat"><div class="label">Upcoming Appointments</div><div class="value">${upcoming.length}</div></div>
-      <div class="stat"><div class="label">Customers</div><div class="value">${priv.customers.length}</div></div>
-      <div class="stat"><div class="label">Vendors</div><div class="value">${priv.vendors.length}</div></div>
+      <div class="stat"><div class="label">Customers</div><div class="value">${data.customers.length}</div></div>
+      <div class="stat"><div class="label">Vendors</div><div class="value">${data.vendors.length}</div></div>
       <div class="stat ${balance>=0?'credit':'debit'}"><div class="label">Ledger Balance</div><div class="value">${fmtMoney(balance)}</div></div>
     </div>
 
@@ -581,7 +615,7 @@ function renderDashboard(){
 }
 
 function renderTasks(){
-  const visible = shared.tasks.filter(t=>{
+  const visible = data.tasks.filter(t=>{
     if(taskFilter==='open') return t.status!=='done';
     if(taskFilter==='done') return t.status==='done';
     return true;
@@ -593,8 +627,8 @@ function renderTasks(){
       <div class="row-main">
         <div class="row-title ${t.status==='done'?'done':''}">${escapeHtml(t.title)}</div>
         <div class="row-meta">${t.status==='done'
-          ? 'Completed by '+escapeHtml(t.assignee||'Unassigned')+(t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):'')
-          : 'Assigned to '+escapeHtml(t.assignee||'Unassigned')+(t.due? ' · due '+fmtDate(t.due):'')}</div>
+          ? 'Completed by '+escapeHtml(profileName(t.assigneeId)||'Unassigned')+(t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):'')
+          : 'Assigned to '+escapeHtml(profileName(t.assigneeId)||'Unassigned')+(t.due? ' · due '+fmtDate(t.due):'')}</div>
       </div>
       ${t.status!=='done' ? priorityBadge(t.priority||'normal') : ''}
       ${t.status!=='done' ? `
@@ -606,16 +640,14 @@ function renderTasks(){
     </div>
   `).join('') : `<div class="empty">${taskFilter==='done' ? 'No completed tasks yet.' : 'Nothing here — add a task below.'}</div>`;
 
-  const assigneeField = shared.staff.length
-    ? `<select id="f-task-assignee">
-         <option value="">Unassigned</option>
-         ${shared.staff.map(s=>`<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('')}
-       </select>`
-    : `<input id="f-task-assignee" placeholder="Team member name">`;
+  const assigneeField = `<select id="f-task-assignee">
+    <option value="">Unassigned</option>
+    ${data.profiles.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}${p.role==='owner'?' (you)':''}</option>`).join('')}
+  </select>`;
 
   return `
     <div class="page-head">
-      <div><h1>Tasks</h1><div class="sub">Shared with everyone who opens this file</div></div>
+      <div><h1>Tasks</h1><div class="sub">Shared — visible to everyone signed in</div></div>
       <button class="btn" id="toggleTaskForm">+ New Task</button>
     </div>
 
@@ -632,7 +664,6 @@ function renderTasks(){
           </select>
         </div>
       </div>
-      ${!shared.staff.length ? `<div class="sub" style="margin-bottom:12px;">Tip: add people on the <strong>Team</strong> tab to assign tasks from a list instead of typing names.</div>` : ''}
       <div class="form-actions">
         <button class="btn" id="saveTask">Save task</button>
         <button class="btn ghost" id="cancelTask">Cancel</button>
@@ -650,38 +681,26 @@ function renderTasks(){
 }
 
 function renderTeam(){
-  const rows = shared.staff.length ? shared.staff.map(s=>{
-    const openCount = shared.tasks.filter(t=>t.assignee===s.name && t.status!=='done').length;
-    const doneCount = shared.tasks.filter(t=>t.assignee===s.name && t.status==='done').length;
+  const staff = data.profiles.filter(p=>p.role==='staff');
+  const rows = staff.length ? staff.map(s=>{
+    const openCount = data.tasks.filter(t=>t.assigneeId===s.id && t.status!=='done').length;
+    const doneCount = data.tasks.filter(t=>t.assigneeId===s.id && t.status==='done').length;
     return `
     <div class="row">
       <div class="row-main">
         <div class="row-title">${escapeHtml(s.name)}</div>
-        <div class="row-meta">${escapeHtml(s.role||'Team member')} · ${openCount} open task${openCount===1?'':'s'} · ${doneCount} completed</div>
+        <div class="row-meta">${openCount} open task${openCount===1?'':'s'} · ${doneCount} completed</div>
       </div>
-      <button class="icon-btn del-staff" data-id="${s.id}" title="Remove">✕</button>
+      <button class="icon-btn del-staff" data-id="${s.id}" title="Remove access">✕</button>
     </div>`;
-  }).join('') : `<div class="empty">No team members yet — add your staff below.</div>`;
+  }).join('') : `<div class="empty">No staff have signed up yet.</div>`;
 
   return `
     <div class="page-head">
-      <div><h1>Team</h1><div class="sub">Staff roster — shared, so staff can pick their name</div></div>
-      <button class="btn" id="toggleStaffForm">+ Add Staff</button>
+      <div><h1>Team</h1><div class="sub">Staff roster</div></div>
     </div>
-
-    <div class="form-panel ${openForm==='staff'?'open':''}" id="staffForm">
-      <div class="form-grid">
-        <div class="field"><label>Name</label><input id="f-staff-name" placeholder="Staff member name"></div>
-        <div class="field"><label>Role</label><input id="f-staff-role" placeholder="e.g. Technician, Front desk"></div>
-      </div>
-      <div class="form-actions">
-        <button class="btn" id="saveStaff">Save staff member</button>
-        <button class="btn ghost" id="cancelStaff">Cancel</button>
-      </div>
-    </div>
-
+    <div class="gate-note" style="margin-bottom:14px;">Staff create their own login from the sign-in screen — send them the link and have them click "Create one." They'll appear here automatically once they sign up.</div>
     <div class="sheet">${rows}</div>
-    <div class="gate-note" style="margin-top:14px;">Share this file's link with your staff. When they open it, they should choose "I'm staff" and pick their name — they'll only see tasks assigned to them.</div>
   `;
 }
 
@@ -703,8 +722,8 @@ function renderNoteFormPanel(){
 }
 
 function renderCustomers(){
-  const rows = priv.customers.length ? priv.customers.map(c=>{
-    const appts = priv.appointments.filter(a=>a.customerId===c.id).sort((a,b)=>a.date.localeCompare(b.date));
+  const rows = data.customers.length ? data.customers.map(c=>{
+    const appts = data.appointments.filter(a=>a.customerId===c.id).sort((a,b)=>a.date.localeCompare(b.date));
     const nextAppt = appts.find(a=>a.date>=todayISO());
     const notes = (c.notes||[]).slice().sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
     const key = 'customer:'+c.id;
@@ -766,7 +785,7 @@ function renderCustomers(){
 }
 
 function renderVendors(){
-  const rows = priv.vendors.length ? priv.vendors.map(v=>{
+  const rows = data.vendors.length ? data.vendors.map(v=>{
     const notes = (v.notes||[]).slice().sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
     const key = 'vendor:'+v.id;
     return `
@@ -811,8 +830,8 @@ function renderVendors(){
 }
 
 function renderLedger(){
-  const balance = priv.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
-  const sorted = [...priv.ledger].sort((a,b)=> b.date.localeCompare(a.date));
+  const balance = data.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
+  const sorted = [...data.ledger].sort((a,b)=> b.date.localeCompare(a.date));
   const rows = sorted.length ? sorted.map(e=>{
     const party = e.partyType ? partyName(e.partyType, e.partyId) : null;
     return `
@@ -828,8 +847,8 @@ function renderLedger(){
   `;
   }).join('') : `<div class="empty">No ledger entries yet — record your first transaction below.</div>`;
 
-  const custOptions = priv.customers.map(c=>`<option value="customer:${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  const vendorOptions = priv.vendors.map(v=>`<option value="vendor:${v.id}">${escapeHtml(v.name)}</option>`).join('');
+  const custOptions = data.customers.map(c=>`<option value="customer:${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  const vendorOptions = data.vendors.map(v=>`<option value="vendor:${v.id}">${escapeHtml(v.name)}</option>`).join('');
 
   return `
     <div class="page-head">
@@ -885,52 +904,55 @@ function attachNoteHandlers(){
     };
   });
   document.querySelectorAll('.del-note').forEach(btn=>{
-    btn.onclick = ()=>{
-      const list = btn.dataset.kind==='customer' ? priv.customers : priv.vendors;
-      const party = list.find(p=>p.id===btn.dataset.id);
-      if(party){
-        party.notes = (party.notes||[]).filter(n=>n.id!==btn.dataset.noteId);
-        savePrivate(); render();
-      }
+    btn.onclick = async ()=>{
+      const { error } = await sb.from('party_notes').delete().eq('id', btn.dataset.noteId);
+      if(error){ alert(error.message); return; }
+      await loadAll(); render();
     };
   });
   const cancelNote = document.getElementById('cancelNote');
   if(cancelNote) cancelNote.onclick = ()=>{ openForm=null; window._noteFor=null; render(); };
   const saveNote = document.getElementById('saveNote');
-  if(saveNote) saveNote.onclick = ()=>{
+  if(saveNote) saveNote.onclick = async ()=>{
     const text = document.getElementById('f-note-text').value.trim();
     if(!text || !window._noteFor){ return; }
-    const list = window._noteFor.kind==='customer' ? priv.customers : priv.vendors;
-    const party = list.find(p=>p.id===window._noteFor.id);
-    if(!party){ return; }
-    party.notes = party.notes || [];
-    party.notes.push({ id: uid(), date: document.getElementById('f-note-date').value || todayISO(), text });
-    openForm=null; window._noteFor=null; savePrivate(); render();
+    const { error } = await sb.from('party_notes').insert({
+      party_type: window._noteFor.kind,
+      party_id: window._noteFor.id,
+      date: document.getElementById('f-note-date').value || todayISO(),
+      text,
+      created_by: session.user.id
+    });
+    if(error){ alert(error.message); return; }
+    openForm=null; window._noteFor=null; await loadAll(); render();
   };
 }
 
 function attachHandlers(){
-  const switchRole = document.getElementById('switchRole');
-  if(switchRole) switchRole.onclick = ()=>{
-    priv.myRole = null; priv.myName = null; staffPickerOpen = false;
-    savePrivate(); render();
+  const signOut = document.getElementById('signOut');
+  if(signOut) signOut.onclick = async ()=>{
+    await sb.auth.signOut();
+    session = null; profile = null;
+    render();
   };
 
   document.querySelectorAll('.nav-item').forEach(el=>{
     el.onclick = ()=>{ view = el.dataset.view; openForm=null; render(); };
   });
 
-  if(priv.myRole==='staff'){
+  if(profile.role==='staff'){
     document.querySelectorAll('.filter-tab').forEach(btn=>{
       btn.onclick = ()=>{ taskFilter = btn.dataset.filter; render(); };
     });
     document.querySelectorAll('.task-check').forEach(btn=>{
-      btn.onclick = ()=>{
-        const t = shared.tasks.find(x=>x.id===btn.dataset.id);
+      btn.onclick = async ()=>{
+        const t = data.tasks.find(x=>x.id===btn.dataset.id);
         if(!t) return;
-        if(t.status==='done'){ t.status='todo'; t.completedAt=null; }
-        else{ t.status='done'; t.completedAt=new Date().toISOString(); }
-        saveShared(); render();
+        const newStatus = t.status==='done' ? 'todo' : 'done';
+        const completedAt = newStatus==='done' ? new Date().toISOString() : null;
+        const { error } = await sb.from('tasks').update({ status:newStatus, completed_at:completedAt }).eq('id', t.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
     return;
@@ -939,7 +961,11 @@ function attachHandlers(){
   if(view==='dashboard'){
     const h1 = document.getElementById('companyNameEdit');
     if(h1){
-      h1.onblur = ()=>{ priv.company = h1.textContent.trim() || 'My Company'; savePrivate(); };
+      h1.onblur = async ()=>{
+        const val = h1.textContent.trim() || 'My Company';
+        data.company = val;
+        await sb.from('settings').update({ company: val }).eq('id', true);
+      };
       h1.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); h1.blur(); } };
     }
   }
@@ -950,61 +976,56 @@ function attachHandlers(){
     const cancel = document.getElementById('cancelTask');
     if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
     const saveBtn = document.getElementById('saveTask');
-    if(saveBtn) saveBtn.onclick = ()=>{
+    if(saveBtn) saveBtn.onclick = async ()=>{
       const title = document.getElementById('f-task-title').value.trim();
       if(!title){ return; }
-      shared.tasks.push({
-        id: uid(),
+      const { error } = await sb.from('tasks').insert({
         title,
-        assignee: document.getElementById('f-task-assignee').value.trim(),
-        due: document.getElementById('f-task-due').value,
+        assignee_id: document.getElementById('f-task-assignee').value || null,
+        due: document.getElementById('f-task-due').value || null,
         priority: document.getElementById('f-task-priority').value,
         status: 'todo'
       });
-      openForm=null; saveShared(); render();
+      if(error){ alert(error.message); return; }
+      openForm=null; await loadAll(); render();
     };
     document.querySelectorAll('.status-select').forEach(sel=>{
-      sel.onchange = ()=>{
-        const t = shared.tasks.find(x=>x.id===sel.dataset.id);
-        if(t){ t.status = sel.value; saveShared(); render(); }
+      sel.onchange = async ()=>{
+        const { error } = await sb.from('tasks').update({ status: sel.value }).eq('id', sel.dataset.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
     document.querySelectorAll('.task-check').forEach(btn=>{
-      btn.onclick = ()=>{
-        const t = shared.tasks.find(x=>x.id===btn.dataset.id);
+      btn.onclick = async ()=>{
+        const t = data.tasks.find(x=>x.id===btn.dataset.id);
         if(!t) return;
-        if(t.status==='done'){ t.status='todo'; t.completedAt=null; }
-        else{ t.status='done'; t.completedAt=new Date().toISOString(); }
-        saveShared(); render();
+        const newStatus = t.status==='done' ? 'todo' : 'done';
+        const completedAt = newStatus==='done' ? new Date().toISOString() : null;
+        const { error } = await sb.from('tasks').update({ status:newStatus, completed_at:completedAt }).eq('id', t.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
     document.querySelectorAll('.filter-tab').forEach(btn=>{
       btn.onclick = ()=>{ taskFilter = btn.dataset.filter; render(); };
     });
     document.querySelectorAll('.del-task').forEach(btn=>{
-      btn.onclick = ()=>{
-        shared.tasks = shared.tasks.filter(t=>t.id!==btn.dataset.id);
-        saveShared(); render();
+      btn.onclick = async ()=>{
+        const { error } = await sb.from('tasks').delete().eq('id', btn.dataset.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
   }
 
   if(view==='team'){
-    const toggle = document.getElementById('toggleStaffForm');
-    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='staff'?null:'staff'; render(); };
-    const cancel = document.getElementById('cancelStaff');
-    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
-    const saveBtn = document.getElementById('saveStaff');
-    if(saveBtn) saveBtn.onclick = ()=>{
-      const name = document.getElementById('f-staff-name').value.trim();
-      if(!name){ return; }
-      shared.staff.push({ id: uid(), name, role: document.getElementById('f-staff-role').value.trim() });
-      openForm=null; saveShared(); render();
-    };
     document.querySelectorAll('.del-staff').forEach(btn=>{
-      btn.onclick = ()=>{
-        shared.staff = shared.staff.filter(s=>s.id!==btn.dataset.id);
-        saveShared(); render();
+      btn.onclick = async ()=>{
+        if(!confirm("Remove this person's access? Their login will remain but they will no longer be able to use the app.")) return;
+        const { error } = await sb.from('profiles').delete().eq('id', btn.dataset.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
   }
@@ -1015,23 +1036,25 @@ function attachHandlers(){
     const cancel = document.getElementById('cancelCustomer');
     if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
     const saveBtn = document.getElementById('saveCustomer');
-    if(saveBtn) saveBtn.onclick = ()=>{
+    if(saveBtn) saveBtn.onclick = async ()=>{
       const name = document.getElementById('f-cust-name').value.trim();
       if(!name){ return; }
-      priv.customers.push({
-        id: uid(), name,
+      const { error } = await sb.from('customers').insert({
+        name,
         phone: document.getElementById('f-cust-phone').value.trim(),
         email: document.getElementById('f-cust-email').value.trim()
       });
-      openForm=null; savePrivate(); render();
+      if(error){ alert(error.message); return; }
+      openForm=null; await loadAll(); render();
     };
     document.querySelectorAll('.del-customer').forEach(btn=>{
-      btn.onclick = ()=>{
+      btn.onclick = async ()=>{
         const id = btn.dataset.id;
-        priv.customers = priv.customers.filter(c=>c.id!==id);
-        priv.appointments = priv.appointments.filter(a=>a.customerId!==id);
-        priv.ledger = priv.ledger.filter(e=> !(e.partyType==='customer' && e.partyId===id));
-        savePrivate(); render();
+        await sb.from('ledger').delete().eq('party_type','customer').eq('party_id', id);
+        await sb.from('party_notes').delete().eq('party_type','customer').eq('party_id', id);
+        const { error } = await sb.from('customers').delete().eq('id', id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
     document.querySelectorAll('.add-appt').forEach(btn=>{
@@ -1047,18 +1070,18 @@ function attachHandlers(){
     const cancelAppt = document.getElementById('cancelAppt');
     if(cancelAppt) cancelAppt.onclick = ()=>{ openForm=null; render(); };
     const saveAppt = document.getElementById('saveAppt');
-    if(saveAppt) saveAppt.onclick = ()=>{
+    if(saveAppt) saveAppt.onclick = async ()=>{
       const dateVal = document.getElementById('f-appt-date').value;
       if(!dateVal || !window._apptCustomerId){ return; }
-      priv.appointments.push({
-        id: uid(),
-        customerId: window._apptCustomerId,
+      const { error } = await sb.from('appointments').insert({
+        customer_id: window._apptCustomerId,
         date: dateVal,
         time: document.getElementById('f-appt-time').value,
         service: document.getElementById('f-appt-service').value.trim(),
         notes: document.getElementById('f-appt-notes').value.trim()
       });
-      openForm=null; savePrivate(); render();
+      if(error){ alert(error.message); return; }
+      openForm=null; await loadAll(); render();
     };
     if(openForm==='appt' && window._apptCustomerId){
       const label = document.getElementById('apptForCustomer');
@@ -1073,23 +1096,25 @@ function attachHandlers(){
     const cancel = document.getElementById('cancelVendor');
     if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
     const saveBtn = document.getElementById('saveVendor');
-    if(saveBtn) saveBtn.onclick = ()=>{
+    if(saveBtn) saveBtn.onclick = async ()=>{
       const name = document.getElementById('f-vendor-name').value.trim();
       if(!name){ return; }
-      priv.vendors.push({
-        id: uid(), name,
+      const { error } = await sb.from('vendors').insert({
+        name,
         phone: document.getElementById('f-vendor-phone').value.trim(),
-        email: document.getElementById('f-vendor-email').value.trim(),
-        notes: []
+        email: document.getElementById('f-vendor-email').value.trim()
       });
-      openForm=null; savePrivate(); render();
+      if(error){ alert(error.message); return; }
+      openForm=null; await loadAll(); render();
     };
     document.querySelectorAll('.del-vendor').forEach(btn=>{
-      btn.onclick = ()=>{
+      btn.onclick = async ()=>{
         const id = btn.dataset.id;
-        priv.vendors = priv.vendors.filter(v=>v.id!==id);
-        priv.ledger = priv.ledger.filter(e=> !(e.partyType==='vendor' && e.partyId===id));
-        savePrivate(); render();
+        await sb.from('ledger').delete().eq('party_type','vendor').eq('party_id', id);
+        await sb.from('party_notes').delete().eq('party_type','vendor').eq('party_id', id);
+        const { error } = await sb.from('vendors').delete().eq('id', id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
     attachNoteHandlers();
@@ -1101,34 +1126,35 @@ function attachHandlers(){
     const cancel = document.getElementById('cancelLedger');
     if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
     const saveBtn = document.getElementById('saveLedger');
-    if(saveBtn) saveBtn.onclick = ()=>{
+    if(saveBtn) saveBtn.onclick = async ()=>{
       const desc = document.getElementById('f-led-desc').value.trim();
       const amount = parseFloat(document.getElementById('f-led-amount').value);
       if(!desc || isNaN(amount) || amount<0){ return; }
       const partyVal = document.getElementById('f-led-party').value;
       let partyType=null, partyId=null;
       if(partyVal){ [partyType, partyId] = partyVal.split(':'); }
-      priv.ledger.push({
-        id: uid(),
+      const { error } = await sb.from('ledger').insert({
         description: desc,
         date: document.getElementById('f-led-date').value || todayISO(),
         type: document.getElementById('f-led-type').value,
         amount,
-        partyType,
-        partyId
+        party_type: partyType,
+        party_id: partyId
       });
-      openForm=null; savePrivate(); render();
+      if(error){ alert(error.message); return; }
+      openForm=null; await loadAll(); render();
     };
     document.querySelectorAll('.del-ledger').forEach(btn=>{
-      btn.onclick = ()=>{
-        priv.ledger = priv.ledger.filter(e=>e.id!==btn.dataset.id);
-        savePrivate(); render();
+      btn.onclick = async ()=>{
+        const { error } = await sb.from('ledger').delete().eq('id', btn.dataset.id);
+        if(error){ alert(error.message); return; }
+        await loadAll(); render();
       };
     });
   }
 }
 
-load();
+boot();
 </script>
 </body>
 </html>
