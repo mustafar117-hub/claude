@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ops Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14213D;
+    --ink-soft:#2B3A5C;
+    --paper:#FBFBF9;
+    --panel:#FFFFFF;
+    --line:#E4E2DD;
+    --line-strong:#CFCBC0;
+    --slate:#5B6472;
+    --emerald:#146356;
+    --emerald-bg:#E9F3F0;
+    --rust:#9C3D22;
+    --rust-bg:#F7EBE6;
+    --amber:#8A6A12;
+    --amber-bg:#FBF3DE;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{ display:flex; min-height:100vh; }
+
+  /* ---- Role gate screen ---- */
+  .gate{
+    min-height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .gate-card{
+    max-width:420px;
+    width:100%;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-top:3px solid var(--ink);
+    padding:36px 32px;
+  }
+  .gate-card h1{
+    font-family:'Fraunces',serif;
+    font-size:26px;
+    margin:0 0 6px;
+  }
+  .gate-card p.sub{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:var(--slate);
+    text-transform:uppercase;
+    letter-spacing:1px;
+    margin:0 0 28px;
+  }
+  .gate-option{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:#fff;
+    border:1.5px solid var(--line-strong);
+    padding:16px 18px;
+    margin-bottom:12px;
+    cursor:pointer;
+    border-radius:var(--radius);
+    font-family:'Inter',sans-serif;
+  }
+  .gate-option:hover{ border-color:var(--ink); }
+  .gate-option .t{ font-weight:700; font-size:15px; }
+  .gate-option .d{ font-size:12.5px; color:var(--slate); margin-top:3px; }
+  .staff-pick{ display:none; margin-top:18px; }
+  .staff-pick.open{ display:block; }
+  .staff-name-btn{
+    display:block; width:100%; text-align:left;
+    background:#fff; border:1px solid var(--line-strong);
+    padding:12px 14px; margin-bottom:8px; cursor:pointer;
+    font-family:'Inter',sans-serif; font-size:14px; border-radius:var(--radius);
+  }
+  .staff-name-btn:hover{ border-color:var(--emerald); }
+  .gate-note{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px; color:var(--slate);
+    margin-top:18px; line-height:1.6;
+  }
+
+  /* ---- Sidebar ---- */
+  .rail{
+    width:210px; flex-shrink:0;
+    background:var(--ink); color:#EDEFF5;
+    display:flex; flex-direction:column;
+    padding:28px 0 20px;
+  }
+  .brand{
+    font-family:'Fraunces',serif; font-size:22px; font-weight:600;
+    padding:0 22px 22px;
+    border-bottom:1px solid rgba(255,255,255,0.12);
+    margin-bottom:6px; letter-spacing:0.2px;
+  }
+  .brand small{
+    display:block; font-family:'IBM Plex Mono',monospace;
+    font-size:10px; font-weight:400; letter-spacing:1.5px;
+    text-transform:uppercase; color:#9AA5C4; margin-top:4px;
+  }
+  .nav-item{
+    display:flex; align-items:center; gap:10px;
+    padding:13px 22px; font-size:14px; font-weight:500;
+    color:#C7CCDE; cursor:pointer;
+    border-left:3px solid transparent;
+    transition:background 0.15s, color 0.15s;
+    user-select:none;
+  }
+  .nav-item:hover{ background:rgba(255,255,255,0.05); color:#fff; }
+  .nav-item.active{
+    background:rgba(255,255,255,0.08);
+    border-left-color:var(--emerald); color:#fff;
+  }
+  .nav-num{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7883A6; width:16px; }
+  .rail-foot{
+    margin-top:auto; padding:14px 22px 0;
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#6E7896;
+    border-top:1px solid rgba(255,255,255,0.1); padding-top:14px;
+  }
+  .rail-foot a{ color:#9AA5C4; cursor:pointer; text-decoration:underline; }
+
+  /* ---- Main ---- */
+  .main{ flex:1; padding:40px 48px 60px; max-width:980px; }
+  .page-head{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    margin-bottom:26px; padding-bottom:18px; border-bottom:2px solid var(--ink);
+  }
+  .page-head h1{ font-family:'Fraunces',serif; font-size:30px; font-weight:600; margin:0; }
+  .page-head .sub{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--slate);
+    text-transform:uppercase; letter-spacing:1px; margin-top:4px;
+  }
+  .btn{
+    font-family:'Inter',sans-serif; font-weight:600; font-size:13.5px;
+    background:var(--ink); color:#fff; border:none;
+    padding:10px 18px; border-radius:var(--radius); cursor:pointer;
+    transition:background 0.15s;
+  }
+  .btn:hover{ background:var(--ink-soft); }
+  .btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line-strong); }
+  .btn.ghost:hover{ border-color:var(--ink); }
+  .btn.small{ padding:6px 12px; font-size:12.5px; }
+
+  .stat-row{ display:flex; gap:16px; margin-bottom:32px; flex-wrap:wrap; }
+  .stat{
+    flex:1; min-width:180px; background:var(--panel);
+    border:1px solid var(--line); border-top:3px solid var(--ink); padding:16px 18px;
+  }
+  .stat .label{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    text-transform:uppercase; letter-spacing:1px; color:var(--slate);
+  }
+  .stat .value{ font-family:'Fraunces',serif; font-size:30px; font-weight:600; margin-top:6px; }
+  .stat.credit{ border-top-color:var(--emerald); }
+  .stat.debit{ border-top-color:var(--rust); }
+
+  .section-title{ font-family:'Fraunces',serif; font-size:18px; font-weight:600; margin:30px 0 10px; }
+
+  .sheet{ background:var(--panel); border:1px solid var(--line); }
+  .row{ display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  .row:last-child{ border-bottom:none; }
+  .row:nth-child(even){ background:#FAFAF8; }
+  .row-main{ flex:1; min-width:0; }
+  .row-title{ font-weight:600; font-size:14.5px; }
+  .row-meta{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--slate); margin-top:3px; }
+  .amount{ font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px; white-space:nowrap; }
+  .amount.credit{ color:var(--emerald); }
+  .amount.debit{ color:var(--rust); }
+  .badge{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; text-transform:uppercase;
+    letter-spacing:0.6px; padding:3px 8px; border-radius:2px; white-space:nowrap;
+  }
+  .badge.todo{ background:var(--amber-bg); color:var(--amber); }
+  .badge.progress{ background:#E6EEF7; color:#2C5C8A; }
+  .badge.done{ background:var(--emerald-bg); color:var(--emerald); }
+  .badge.credit{ background:var(--emerald-bg); color:var(--emerald); }
+  .badge.debit{ background:var(--rust-bg); color:var(--rust); }
+  .icon-btn{ background:none; border:none; cursor:pointer; color:var(--slate); font-size:16px; padding:4px 8px; }
+  .icon-btn:hover{ color:var(--rust); }
+
+  .task-check{
+    flex-shrink:0; width:24px; height:24px; border-radius:50%;
+    border:1.5px solid var(--line-strong); background:#fff; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:13px; line-height:1;
+    transition:background 0.15s, border-color 0.15s;
+  }
+  .task-check:hover{ border-color:var(--emerald); }
+  .task-check.checked{ background:var(--emerald); border-color:var(--emerald); }
+  .row-title.done{ text-decoration:line-through; color:var(--slate); font-weight:500; }
+  .filter-tabs{ display:flex; gap:6px; margin-bottom:14px; }
+  .filter-tab{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; text-transform:uppercase;
+    letter-spacing:0.6px; padding:6px 12px; border:1px solid var(--line-strong);
+    background:#fff; color:var(--slate); cursor:pointer; border-radius:2px;
+  }
+  .filter-tab.active{ background:var(--ink); border-color:var(--ink); color:#fff; }
+
+  .empty{ padding:40px 20px; text-align:center; color:var(--slate); font-family:'IBM Plex Mono',monospace; font-size:12.5px; }
+
+  .form-panel{ background:var(--panel); border:1px solid var(--line-strong); padding:20px; margin-bottom:24px; display:none; }
+  .form-panel.open{ display:block; }
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .field{ display:flex; flex-direction:column; gap:5px; }
+  .field.full{ grid-column:1 / -1; }
+  .field label{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:0.8px; color:var(--slate);
+  }
+  .field input, .field select, .field textarea{
+    font-family:'Inter',sans-serif; font-size:14px; padding:9px 10px;
+    border:1px solid var(--line-strong); border-radius:var(--radius); background:#fff; color:var(--ink);
+  }
+  .field textarea{ resize:vertical; min-height:60px; }
+  .form-actions{ display:flex; gap:10px; }
+
+  @media (max-width: 760px){
+    .app{ flex-direction:column; }
+    .rail{ width:100%; flex-direction:row; overflow-x:auto; padding:14px 10px; }
+    .brand{ display:none; }
+    .nav-item{ border-left:none; border-bottom:3px solid transparent; white-space:nowrap; }
+    .nav-item.active{ border-bottom-color:var(--emerald); }
+    .rail-foot{ display:none; }
+    .main{ padding:24px 18px 40px; }
+    .form-grid{ grid-template-columns:1fr; }
+    .page-head{ flex-direction:column; align-items:flex-start; gap:10px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+const SHARED_KEY = 'ops-shared-v1';   // tasks + staff roster — visible to everyone who opens this
+const PRIVATE_KEY = 'ops-private-v1'; // customers, appointments, ledger, this device's role — visible only to this Claude account
+const LEGACY_KEY = 'ops-data-v1';     // old single-bucket format, migrated on first load
+
+let shared = { tasks: [], staff: [] };
+let priv = { company: 'My Company', customers: [], appointments: [], ledger: [], myRole: null, myName: null };
+
+let view = 'dashboard';
+let openForm = null;
+let taskFilter = 'open';
+let staffPickerOpen = false;
+
+const uid = () => Math.random().toString(36).slice(2,9);
+const todayISO = () => new Date().toISOString().slice(0,10);
+const fmtDate = (iso) => {
+  if(!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+};
+const fmtMoney = (n) => {
+  const v = Number(n)||0;
+  return (v<0?'-':'') + '$' + Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2, maximumFractionDigits:2});
+};
+function escapeHtml(str){
+  return String(str??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function customerName(id){
+  const c = priv.customers.find(x=>x.id===id);
+  return c ? c.name : '—';
+}
+function statusClass(s){
+  if(s==='done') return 'done';
+  if(s==='in progress') return 'progress';
+  return 'todo';
+}
+
+// ---------- LOAD / SAVE ----------
+async function load(){
+  try{
+    const sRes = await window.storage.get(SHARED_KEY, true);
+    if(sRes && sRes.value) shared = JSON.parse(sRes.value);
+  }catch(e){ /* nothing shared yet */ }
+
+  try{
+    const pRes = await window.storage.get(PRIVATE_KEY, false);
+    if(pRes && pRes.value) priv = JSON.parse(pRes.value);
+  }catch(e){ /* nothing private yet */ }
+
+  // One-time migration from the old single-bucket private format
+  if((!shared.tasks || !shared.tasks.length) && (!priv.customers || !priv.customers.length)){
+    try{
+      const legacy = await window.storage.get(LEGACY_KEY, false);
+      if(legacy && legacy.value){
+        const old = JSON.parse(legacy.value);
+        shared.tasks = old.tasks || [];
+        shared.staff = old.staff || [];
+        priv.company = old.company || priv.company;
+        priv.customers = old.customers || [];
+        priv.appointments = old.appointments || [];
+        priv.ledger = old.ledger || [];
+        priv.myRole = 'owner';
+        await saveShared();
+        await savePrivate();
+      }
+    }catch(e){ /* no legacy data */ }
+  }
+
+  render();
+}
+async function saveShared(){
+  try{ await window.storage.set(SHARED_KEY, JSON.stringify(shared), true); }
+  catch(e){ console.error('shared storage error', e); }
+}
+async function savePrivate(){
+  try{ await window.storage.set(PRIVATE_KEY, JSON.stringify(priv), false); }
+  catch(e){ console.error('private storage error', e); }
+}
+
+// ---------- ROOT RENDER ----------
+function render(){
+  const root = document.getElementById('root');
+  if(!priv.myRole){
+    root.innerHTML = renderGate();
+    attachGateHandlers();
+    return;
+  }
+  root.innerHTML = renderApp();
+  attachHandlers();
+}
+
+function renderGate(){
+  return `
+  <div class="gate">
+    <div class="gate-card">
+      <h1>Ops Ledger</h1>
+      <p class="sub">Who's opening this?</p>
+
+      <button class="gate-option" id="pickOwner">
+        <div class="t">I'm the owner / manager</div>
+        <div class="d">Full access — tasks, customers, appointments, ledger</div>
+      </button>
+
+      <button class="gate-option" id="pickStaff">
+        <div class="t">I'm staff</div>
+        <div class="d">See and update only the tasks assigned to you</div>
+      </button>
+
+      <div class="staff-pick ${staffPickerOpen?'open':''}" id="staffPick">
+        ${shared.staff.length ? shared.staff.map(s=>`
+          <button class="staff-name-btn" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</button>
+        `).join('') : `<div class="gate-note">No staff have been added yet. Ask the owner to add you on the Team tab first.</div>`}
+      </div>
+
+      <div class="gate-note">Tasks are shared with everyone who opens this. Customer records and the ledger stay private to whoever is signed in as owner.</div>
+    </div>
+  </div>`;
+}
+
+function attachGateHandlers(){
+  const ownerBtn = document.getElementById('pickOwner');
+  if(ownerBtn) ownerBtn.onclick = ()=>{
+    priv.myRole = 'owner';
+    savePrivate();
+    render();
+  };
+  const staffBtn = document.getElementById('pickStaff');
+  if(staffBtn) staffBtn.onclick = ()=>{
+    staffPickerOpen = true;
+    render();
+  };
+  document.querySelectorAll('.staff-name-btn').forEach(btn=>{
+    btn.onclick = ()=>{
+      priv.myRole = 'staff';
+      priv.myName = btn.dataset.name;
+      savePrivate();
+      render();
+    };
+  });
+}
+
+function renderApp(){
+  const isOwner = priv.myRole === 'owner';
+  const navItems = isOwner ? `
+    <div class="nav-item ${view==='dashboard'?'active':''}" data-view="dashboard"><span class="nav-num">01</span>Dashboard</div>
+    <div class="nav-item ${view==='tasks'?'active':''}" data-view="tasks"><span class="nav-num">02</span>Tasks</div>
+    <div class="nav-item ${view==='team'?'active':''}" data-view="team"><span class="nav-num">03</span>Team</div>
+    <div class="nav-item ${view==='customers'?'active':''}" data-view="customers"><span class="nav-num">04</span>Customers</div>
+    <div class="nav-item ${view==='ledger'?'active':''}" data-view="ledger"><span class="nav-num">05</span>Ledger</div>
+  ` : `
+    <div class="nav-item active" data-view="tasks"><span class="nav-num">01</span>My Tasks</div>
+  `;
+
+  let body;
+  if(!isOwner){ body = renderMyTasks(); }
+  else if(view==='dashboard') body = renderDashboard();
+  else if(view==='tasks') body = renderTasks();
+  else if(view==='team') body = renderTeam();
+  else if(view==='customers') body = renderCustomers();
+  else if(view==='ledger') body = renderLedger();
+
+  return `
+  <div class="app">
+    <div class="rail">
+      <div class="brand">${escapeHtml(priv.company)}<small>${isOwner?'Business Console':'Staff View'}</small></div>
+      ${navItems}
+      <div class="rail-foot">
+        ${isOwner ? 'saved privately to you' : 'signed in as '+escapeHtml(priv.myName)}<br>
+        <a id="switchRole">switch view</a>
+      </div>
+    </div>
+    <div class="main">${body}</div>
+  </div>`;
+}
+
+// ---------- STAFF VIEW ----------
+function renderMyTasks(){
+  const mine = shared.tasks.filter(t=>t.assignee===priv.myName);
+  const visible = mine.filter(t=>{
+    if(taskFilter==='open') return t.status!=='done';
+    if(taskFilter==='done') return t.status==='done';
+    return true;
+  });
+  const rows = visible.length ? visible.map(t=>`
+    <div class="row">
+      <button class="task-check ${t.status==='done'?'checked':''}" data-id="${t.id}" title="${t.status==='done'?'Mark as not done':'Mark complete'}">${t.status==='done'?'✓':''}</button>
+      <div class="row-main">
+        <div class="row-title ${t.status==='done'?'done':''}">${escapeHtml(t.title)}</div>
+        <div class="row-meta">${t.status==='done'
+          ? 'Completed '+(t.completedAt? fmtDate(t.completedAt.slice(0,10)):'')
+          : (t.due? 'Due '+fmtDate(t.due):'No due date')+' · '+escapeHtml(t.priority||'normal')+' priority'}</div>
+      </div>
+    </div>
+  `).join('') : `<div class="empty">${taskFilter==='done' ? 'Nothing completed yet.' : 'Nothing assigned to you right now.'}</div>`;
+
+  return `
+    <div class="page-head">
+      <div><h1>My Tasks</h1><div class="sub">Assigned to ${escapeHtml(priv.myName)}</div></div>
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab ${taskFilter==='open'?'active':''}" data-filter="open">Open</button>
+      <button class="filter-tab ${taskFilter==='done'?'active':''}" data-filter="done">Completed</button>
+      <button class="filter-tab ${taskFilter==='all'?'active':''}" data-filter="all">All</button>
+    </div>
+    <div class="sheet">${rows}</div>
+  `;
+}
+
+// ---------- OWNER VIEWS ----------
+function renderDashboard(){
+  const openTaskRows = shared.tasks.filter(t=>t.status!=='done').slice(0,5).map(t=>`
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(t.title)}</div>
+        <div class="row-meta">${escapeHtml(t.assignee||'Unassigned')}${t.due? ' · due '+fmtDate(t.due):''}</div>
+      </div>
+      <span class="badge ${statusClass(t.status)}">${escapeHtml(t.status)}</span>
+    </div>`).join('') || `<div class="empty">Nothing open — you're all caught up.</div>`;
+
+  const completedRecent = shared.tasks.filter(t=>t.status==='done').sort((a,b)=> (b.completedAt||'').localeCompare(a.completedAt||'')).slice(0,5).map(t=>`
+    <div class="row">
+      <div class="task-check checked" style="cursor:default;">✓</div>
+      <div class="row-main">
+        <div class="row-title done">${escapeHtml(t.title)}</div>
+        <div class="row-meta">Completed by ${escapeHtml(t.assignee||'Unassigned')}${t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):''}</div>
+      </div>
+    </div>`).join('') || `<div class="empty">No completed tasks yet.</div>`;
+
+  const upcoming = priv.appointments.filter(a=> a.date >= todayISO()).sort((a,b)=>a.date.localeCompare(b.date));
+  const balance = priv.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
+  const upcomingRows = upcoming.slice(0,5).map(a=>`
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(customerName(a.customerId))} — ${escapeHtml(a.service||'Appointment')}</div>
+        <div class="row-meta">${fmtDate(a.date)}${a.time? ' · '+escapeHtml(a.time):''}</div>
+      </div>
+    </div>`).join('') || `<div class="empty">No upcoming appointments scheduled.</div>`;
+
+  return `
+    <div class="page-head">
+      <div>
+        <h1 contenteditable="true" id="companyNameEdit" spellcheck="false">${escapeHtml(priv.company)}</h1>
+        <div class="sub">Overview</div>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="label">Open Tasks</div><div class="value">${shared.tasks.filter(t=>t.status!=='done').length}</div></div>
+      <div class="stat"><div class="label">Upcoming Appointments</div><div class="value">${upcoming.length}</div></div>
+      <div class="stat"><div class="label">Customers</div><div class="value">${priv.customers.length}</div></div>
+      <div class="stat ${balance>=0?'credit':'debit'}"><div class="label">Ledger Balance</div><div class="value">${fmtMoney(balance)}</div></div>
+    </div>
+
+    <div class="section-title">Next up</div>
+    <div class="sheet">${upcomingRows}</div>
+
+    <div class="section-title">Open tasks</div>
+    <div class="sheet">${openTaskRows}</div>
+
+    <div class="section-title">Recently completed</div>
+    <div class="sheet">${completedRecent}</div>
+  `;
+}
+
+function renderTasks(){
+  const visible = shared.tasks.filter(t=>{
+    if(taskFilter==='open') return t.status!=='done';
+    if(taskFilter==='done') return t.status==='done';
+    return true;
+  });
+
+  const rows = visible.length ? visible.map(t=>`
+    <div class="row">
+      <button class="task-check ${t.status==='done'?'checked':''}" data-id="${t.id}" title="${t.status==='done'?'Mark as not done':'Mark complete'}">${t.status==='done'?'✓':''}</button>
+      <div class="row-main">
+        <div class="row-title ${t.status==='done'?'done':''}">${escapeHtml(t.title)}</div>
+        <div class="row-meta">${t.status==='done'
+          ? 'Completed by '+escapeHtml(t.assignee||'Unassigned')+(t.completedAt? ' · '+fmtDate(t.completedAt.slice(0,10)):'')
+          : 'Assigned to '+escapeHtml(t.assignee||'Unassigned')+(t.due? ' · due '+fmtDate(t.due):'')+' · '+escapeHtml(t.priority||'normal')+' priority'}</div>
+      </div>
+      ${t.status!=='done' ? `
+      <select class="status-select" data-id="${t.id}" style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; padding:5px 6px; border:1px solid var(--line-strong); border-radius:2px;">
+        <option value="todo" ${t.status==='todo'?'selected':''}>To do</option>
+        <option value="in progress" ${t.status==='in progress'?'selected':''}>In progress</option>
+      </select>` : ''}
+      <button class="icon-btn del-task" data-id="${t.id}" title="Delete">✕</button>
+    </div>
+  `).join('') : `<div class="empty">${taskFilter==='done' ? 'No completed tasks yet.' : 'Nothing here — add a task below.'}</div>`;
+
+  const assigneeField = shared.staff.length
+    ? `<select id="f-task-assignee">
+         <option value="">Unassigned</option>
+         ${shared.staff.map(s=>`<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('')}
+       </select>`
+    : `<input id="f-task-assignee" placeholder="Team member name">`;
+
+  return `
+    <div class="page-head">
+      <div><h1>Tasks</h1><div class="sub">Shared with everyone who opens this file</div></div>
+      <button class="btn" id="toggleTaskForm">+ New Task</button>
+    </div>
+
+    <div class="form-panel ${openForm==='task'?'open':''}" id="taskForm">
+      <div class="form-grid">
+        <div class="field full"><label>Task</label><input id="f-task-title" placeholder="e.g. Follow up with supplier"></div>
+        <div class="field"><label>Assign to</label>${assigneeField}</div>
+        <div class="field"><label>Due date</label><input type="date" id="f-task-due"></div>
+        <div class="field"><label>Priority</label>
+          <select id="f-task-priority">
+            <option value="low">Low</option>
+            <option value="normal" selected>Normal</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+      ${!shared.staff.length ? `<div class="sub" style="margin-bottom:12px;">Tip: add people on the <strong>Team</strong> tab to assign tasks from a list instead of typing names.</div>` : ''}
+      <div class="form-actions">
+        <button class="btn" id="saveTask">Save task</button>
+        <button class="btn ghost" id="cancelTask">Cancel</button>
+      </div>
+    </div>
+
+    <div class="filter-tabs">
+      <button class="filter-tab ${taskFilter==='open'?'active':''}" data-filter="open">Open</button>
+      <button class="filter-tab ${taskFilter==='done'?'active':''}" data-filter="done">Completed</button>
+      <button class="filter-tab ${taskFilter==='all'?'active':''}" data-filter="all">All</button>
+    </div>
+
+    <div class="sheet">${rows}</div>
+  `;
+}
+
+function renderTeam(){
+  const rows = shared.staff.length ? shared.staff.map(s=>{
+    const openCount = shared.tasks.filter(t=>t.assignee===s.name && t.status!=='done').length;
+    const doneCount = shared.tasks.filter(t=>t.assignee===s.name && t.status==='done').length;
+    return `
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(s.name)}</div>
+        <div class="row-meta">${escapeHtml(s.role||'Team member')} · ${openCount} open task${openCount===1?'':'s'} · ${doneCount} completed</div>
+      </div>
+      <button class="icon-btn del-staff" data-id="${s.id}" title="Remove">✕</button>
+    </div>`;
+  }).join('') : `<div class="empty">No team members yet — add your staff below.</div>`;
+
+  return `
+    <div class="page-head">
+      <div><h1>Team</h1><div class="sub">Staff roster — shared, so staff can pick their name</div></div>
+      <button class="btn" id="toggleStaffForm">+ Add Staff</button>
+    </div>
+
+    <div class="form-panel ${openForm==='staff'?'open':''}" id="staffForm">
+      <div class="form-grid">
+        <div class="field"><label>Name</label><input id="f-staff-name" placeholder="Staff member name"></div>
+        <div class="field"><label>Role</label><input id="f-staff-role" placeholder="e.g. Technician, Front desk"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveStaff">Save staff member</button>
+        <button class="btn ghost" id="cancelStaff">Cancel</button>
+      </div>
+    </div>
+
+    <div class="sheet">${rows}</div>
+    <div class="gate-note" style="margin-top:14px;">Share this file's link with your staff. When they open it, they should choose "I'm staff" and pick their name — they'll only see tasks assigned to them.</div>
+  `;
+}
+
+function renderCustomers(){
+  const rows = priv.customers.length ? priv.customers.map(c=>{
+    const appts = priv.appointments.filter(a=>a.customerId===c.id).sort((a,b)=>a.date.localeCompare(b.date));
+    const nextAppt = appts.find(a=>a.date>=todayISO());
+    return `
+    <div class="row" style="align-items:flex-start;">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(c.name)}</div>
+        <div class="row-meta">${escapeHtml(c.phone||'')}${c.phone&&c.email?' · ':''}${escapeHtml(c.email||'')}</div>
+        <div class="row-meta" style="margin-top:6px;">${nextAppt ? 'Next appointment: '+fmtDate(nextAppt.date)+(nextAppt.time?' · '+escapeHtml(nextAppt.time):'')+' — '+escapeHtml(nextAppt.service||'') : 'No upcoming appointment'}</div>
+      </div>
+      <button class="btn small ghost add-appt" data-id="${c.id}">+ Appointment</button>
+      <button class="icon-btn del-customer" data-id="${c.id}" title="Delete">✕</button>
+    </div>`;
+  }).join('') : `<div class="empty">No customers yet — add your first below.</div>`;
+
+  return `
+    <div class="page-head">
+      <div><h1>Customers</h1><div class="sub">Private — only visible to you</div></div>
+      <button class="btn" id="toggleCustomerForm">+ New Customer</button>
+    </div>
+
+    <div class="form-panel ${openForm==='customer'?'open':''}" id="customerForm">
+      <div class="form-grid">
+        <div class="field"><label>Name</label><input id="f-cust-name" placeholder="Customer name"></div>
+        <div class="field"><label>Phone</label><input id="f-cust-phone" placeholder="Phone number"></div>
+        <div class="field full"><label>Email</label><input id="f-cust-email" placeholder="Email address"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveCustomer">Save customer</button>
+        <button class="btn ghost" id="cancelCustomer">Cancel</button>
+      </div>
+    </div>
+
+    <div class="form-panel ${openForm==='appt'?'open':''}" id="apptForm">
+      <div class="sub" style="margin-bottom:10px;">New appointment for <strong id="apptForCustomer"></strong></div>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" id="f-appt-date"></div>
+        <div class="field"><label>Time</label><input type="time" id="f-appt-time"></div>
+        <div class="field full"><label>Service / reason</label><input id="f-appt-service" placeholder="e.g. Consultation"></div>
+        <div class="field full"><label>Notes</label><textarea id="f-appt-notes" placeholder="Optional notes"></textarea></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveAppt">Save appointment</button>
+        <button class="btn ghost" id="cancelAppt">Cancel</button>
+      </div>
+    </div>
+
+    <div class="sheet">${rows}</div>
+  `;
+}
+
+function renderLedger(){
+  const balance = priv.ledger.reduce((s,e)=> s + (e.type==='credit'? Number(e.amount):-Number(e.amount)), 0);
+  const sorted = [...priv.ledger].sort((a,b)=> b.date.localeCompare(a.date));
+  const rows = sorted.length ? sorted.map(e=>`
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">${escapeHtml(e.description)}</div>
+        <div class="row-meta">${fmtDate(e.date)}${e.customerId? ' · '+escapeHtml(customerName(e.customerId)):''}</div>
+      </div>
+      <span class="badge ${e.type}">${e.type}</span>
+      <span class="amount ${e.type}">${e.type==='debit'?'-':'+'}${fmtMoney(e.amount)}</span>
+      <button class="icon-btn del-ledger" data-id="${e.id}" title="Delete">✕</button>
+    </div>
+  `).join('') : `<div class="empty">No ledger entries yet — record your first transaction below.</div>`;
+
+  const custOptions = priv.customers.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+
+  return `
+    <div class="page-head">
+      <div><h1>Ledger</h1><div class="sub">Private — running balance: <strong style="font-family:'IBM Plex Mono',monospace; color:${balance>=0?'var(--emerald)':'var(--rust)'};">${fmtMoney(balance)}</strong></div></div>
+      <button class="btn" id="toggleLedgerForm">+ New Entry</button>
+    </div>
+
+    <div class="form-panel ${openForm==='ledger'?'open':''}" id="ledgerForm">
+      <div class="form-grid">
+        <div class="field full"><label>Description</label><input id="f-led-desc" placeholder="e.g. Invoice #204 payment"></div>
+        <div class="field"><label>Date</label><input type="date" id="f-led-date" value="${todayISO()}"></div>
+        <div class="field"><label>Type</label>
+          <select id="f-led-type">
+            <option value="credit">Credit (money in)</option>
+            <option value="debit">Debit (money out)</option>
+          </select>
+        </div>
+        <div class="field"><label>Amount</label><input type="number" step="0.01" min="0" id="f-led-amount" placeholder="0.00"></div>
+        <div class="field"><label>Customer (optional)</label>
+          <select id="f-led-customer"><option value="">—</option>${custOptions}</select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="saveLedger">Save entry</button>
+        <button class="btn ghost" id="cancelLedger">Cancel</button>
+      </div>
+    </div>
+
+    <div class="sheet">${rows}</div>
+  `;
+}
+
+// ---------- HANDLERS ----------
+function attachHandlers(){
+  const switchRole = document.getElementById('switchRole');
+  if(switchRole) switchRole.onclick = ()=>{
+    priv.myRole = null; priv.myName = null; staffPickerOpen = false;
+    savePrivate(); render();
+  };
+
+  document.querySelectorAll('.nav-item').forEach(el=>{
+    el.onclick = ()=>{ view = el.dataset.view; openForm=null; render(); };
+  });
+
+  if(priv.myRole==='staff'){
+    document.querySelectorAll('.filter-tab').forEach(btn=>{
+      btn.onclick = ()=>{ taskFilter = btn.dataset.filter; render(); };
+    });
+    document.querySelectorAll('.task-check').forEach(btn=>{
+      btn.onclick = ()=>{
+        const t = shared.tasks.find(x=>x.id===btn.dataset.id);
+        if(!t) return;
+        if(t.status==='done'){ t.status='todo'; t.completedAt=null; }
+        else{ t.status='done'; t.completedAt=new Date().toISOString(); }
+        saveShared(); render();
+      };
+    });
+    return;
+  }
+
+  if(view==='dashboard'){
+    const h1 = document.getElementById('companyNameEdit');
+    if(h1){
+      h1.onblur = ()=>{ priv.company = h1.textContent.trim() || 'My Company'; savePrivate(); };
+      h1.onkeydown = (e)=>{ if(e.key==='Enter'){ e.preventDefault(); h1.blur(); } };
+    }
+  }
+
+  if(view==='tasks'){
+    const toggle = document.getElementById('toggleTaskForm');
+    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='task'?null:'task'; render(); };
+    const cancel = document.getElementById('cancelTask');
+    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
+    const saveBtn = document.getElementById('saveTask');
+    if(saveBtn) saveBtn.onclick = ()=>{
+      const title = document.getElementById('f-task-title').value.trim();
+      if(!title){ return; }
+      shared.tasks.push({
+        id: uid(),
+        title,
+        assignee: document.getElementById('f-task-assignee').value.trim(),
+        due: document.getElementById('f-task-due').value,
+        priority: document.getElementById('f-task-priority').value,
+        status: 'todo'
+      });
+      openForm=null; saveShared(); render();
+    };
+    document.querySelectorAll('.status-select').forEach(sel=>{
+      sel.onchange = ()=>{
+        const t = shared.tasks.find(x=>x.id===sel.dataset.id);
+        if(t){ t.status = sel.value; saveShared(); render(); }
+      };
+    });
+    document.querySelectorAll('.task-check').forEach(btn=>{
+      btn.onclick = ()=>{
+        const t = shared.tasks.find(x=>x.id===btn.dataset.id);
+        if(!t) return;
+        if(t.status==='done'){ t.status='todo'; t.completedAt=null; }
+        else{ t.status='done'; t.completedAt=new Date().toISOString(); }
+        saveShared(); render();
+      };
+    });
+    document.querySelectorAll('.filter-tab').forEach(btn=>{
+      btn.onclick = ()=>{ taskFilter = btn.dataset.filter; render(); };
+    });
+    document.querySelectorAll('.del-task').forEach(btn=>{
+      btn.onclick = ()=>{
+        shared.tasks = shared.tasks.filter(t=>t.id!==btn.dataset.id);
+        saveShared(); render();
+      };
+    });
+  }
+
+  if(view==='team'){
+    const toggle = document.getElementById('toggleStaffForm');
+    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='staff'?null:'staff'; render(); };
+    const cancel = document.getElementById('cancelStaff');
+    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
+    const saveBtn = document.getElementById('saveStaff');
+    if(saveBtn) saveBtn.onclick = ()=>{
+      const name = document.getElementById('f-staff-name').value.trim();
+      if(!name){ return; }
+      shared.staff.push({ id: uid(), name, role: document.getElementById('f-staff-role').value.trim() });
+      openForm=null; saveShared(); render();
+    };
+    document.querySelectorAll('.del-staff').forEach(btn=>{
+      btn.onclick = ()=>{
+        shared.staff = shared.staff.filter(s=>s.id!==btn.dataset.id);
+        saveShared(); render();
+      };
+    });
+  }
+
+  if(view==='customers'){
+    const toggle = document.getElementById('toggleCustomerForm');
+    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='customer'?null:'customer'; render(); };
+    const cancel = document.getElementById('cancelCustomer');
+    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
+    const saveBtn = document.getElementById('saveCustomer');
+    if(saveBtn) saveBtn.onclick = ()=>{
+      const name = document.getElementById('f-cust-name').value.trim();
+      if(!name){ return; }
+      priv.customers.push({
+        id: uid(), name,
+        phone: document.getElementById('f-cust-phone').value.trim(),
+        email: document.getElementById('f-cust-email').value.trim()
+      });
+      openForm=null; savePrivate(); render();
+    };
+    document.querySelectorAll('.del-customer').forEach(btn=>{
+      btn.onclick = ()=>{
+        const id = btn.dataset.id;
+        priv.customers = priv.customers.filter(c=>c.id!==id);
+        priv.appointments = priv.appointments.filter(a=>a.customerId!==id);
+        savePrivate(); render();
+      };
+    });
+    document.querySelectorAll('.add-appt').forEach(btn=>{
+      btn.onclick = ()=>{
+        openForm='appt';
+        window._apptCustomerId = btn.dataset.id;
+        render();
+        const label = document.getElementById('apptForCustomer');
+        if(label) label.textContent = customerName(window._apptCustomerId);
+        document.getElementById('apptForm').scrollIntoView({behavior:'smooth', block:'center'});
+      };
+    });
+    const cancelAppt = document.getElementById('cancelAppt');
+    if(cancelAppt) cancelAppt.onclick = ()=>{ openForm=null; render(); };
+    const saveAppt = document.getElementById('saveAppt');
+    if(saveAppt) saveAppt.onclick = ()=>{
+      const dateVal = document.getElementById('f-appt-date').value;
+      if(!dateVal || !window._apptCustomerId){ return; }
+      priv.appointments.push({
+        id: uid(),
+        customerId: window._apptCustomerId,
+        date: dateVal,
+        time: document.getElementById('f-appt-time').value,
+        service: document.getElementById('f-appt-service').value.trim(),
+        notes: document.getElementById('f-appt-notes').value.trim()
+      });
+      openForm=null; savePrivate(); render();
+    };
+    if(openForm==='appt' && window._apptCustomerId){
+      const label = document.getElementById('apptForCustomer');
+      if(label) label.textContent = customerName(window._apptCustomerId);
+    }
+  }
+
+  if(view==='ledger'){
+    const toggle = document.getElementById('toggleLedgerForm');
+    if(toggle) toggle.onclick = ()=>{ openForm = openForm==='ledger'?null:'ledger'; render(); };
+    const cancel = document.getElementById('cancelLedger');
+    if(cancel) cancel.onclick = ()=>{ openForm=null; render(); };
+    const saveBtn = document.getElementById('saveLedger');
+    if(saveBtn) saveBtn.onclick = ()=>{
+      const desc = document.getElementById('f-led-desc').value.trim();
+      const amount = parseFloat(document.getElementById('f-led-amount').value);
+      if(!desc || isNaN(amount) || amount<0){ return; }
+      priv.ledger.push({
+        id: uid(),
+        description: desc,
+        date: document.getElementById('f-led-date').value || todayISO(),
+        type: document.getElementById('f-led-type').value,
+        amount,
+        customerId: document.getElementById('f-led-customer').value || null
+      });
+      openForm=null; savePrivate(); render();
+    };
+    document.querySelectorAll('.del-ledger').forEach(btn=>{
+      btn.onclick = ()=>{
+        priv.ledger = priv.ledger.filter(e=>e.id!==btn.dataset.id);
+        savePrivate(); render();
+      };
+    });
+  }
+}
+
+load();
+</script>
+</body>
+</html>
